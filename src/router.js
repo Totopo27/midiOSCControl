@@ -70,6 +70,17 @@ class MidiRouter {
         return this.midi.info();
     }
 
+    async refresh() {
+        if (!this.midi) {
+            await this.init();
+            return this.midi.info();
+        }
+        if (typeof this.midi.refresh === 'function') {
+            await this.midi.refresh();
+        }
+        return this.midi.info();
+    }
+
     listOutputs() {
         if (!this.midi) throw new Error('MidiRouter no inicializado. Llama a init() primero.');
         const info = this.midi.info();

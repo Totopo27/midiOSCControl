@@ -75,12 +75,12 @@ class LiveBridgeEngine {
 
         // 1. Resolver y abrir salida física
         let outToOpen = this.options.targetMidiOut;
-        if (!outToOpen) {
+        if (!outToOpen && this.options.targetMidiOut !== 'none') {
             const usbOut = outputs.find(o => o.name.toLowerCase().includes('usb'));
-            outToOpen = usbOut ? usbOut.name : (outputs.find(o => !o.name.includes('Wavetable'))?.name || null);
+            outToOpen = usbOut ? usbOut.name : null;
         }
 
-        if (outToOpen && outToOpen !== this.processor.midiRouter.activeOutputName) {
+        if (outToOpen && outToOpen !== 'none' && outToOpen !== this.processor.midiRouter.activeOutputName) {
             try {
                 await this.processor.midiRouter.openOutput(outToOpen);
                 this.lastOutputName = outToOpen;
@@ -92,12 +92,12 @@ class LiveBridgeEngine {
 
         // 2. Resolver y abrir entrada física
         let inToOpen = this.options.targetMidiIn;
-        if (!inToOpen) {
+        if (!inToOpen && this.options.targetMidiIn !== 'none') {
             const usbIn = inputs.find(i => i.name.toLowerCase().includes('usb'));
-            inToOpen = usbIn ? usbIn.name : (inputs[0]?.name || null);
+            inToOpen = usbIn ? usbIn.name : null;
         }
 
-        if (inToOpen && inToOpen !== this.processor.midiRouter.activeInputName) {
+        if (inToOpen && inToOpen !== 'none' && inToOpen !== this.processor.midiRouter.activeInputName) {
             try {
                 await this.processor.midiRouter.openInput(inToOpen);
                 this.lastInputName = inToOpen;
@@ -113,6 +113,8 @@ class LiveBridgeEngine {
             if (!this.isRunning) return;
 
             try {
+                await this.processor.midiRouter.refresh();
+
                 const outputs = this.processor.midiRouter.listOutputs();
                 const inputs = this.processor.midiRouter.listInputs();
 
@@ -120,16 +122,27 @@ class LiveBridgeEngine {
                 const inActive = this.processor.midiRouter.activeInputName;
 
                 // Verificar si el puerto de salida activo sigue existiendo en el bus
-                const outExists = outActive && outputs.some(o => o.name === outActive);
-                if (!outExists || !outActive) {
-                    this.stats.reconnectAttempts++;
-                    await this._resolveAndOpenPorts();
+                const isHardwareOutAllowed = this.processor.midiRouter.isRouteAllowed('hardware', 'hardware');
+                if (this.options.targetMidiOut && this.options.targetMidiOut !== 'none' && isHardwareOutAllowed) {
+                    const outExists = outActive && outputs.some(o => o.name === outActive);
+                    if (!outExists || !outActive) {
+                        this.stats.reconnectAttempts++;
+                        await this._resolveAndOpenPorts();
+                    }
+                } else if ((this.options.targetMidiOut === 'none' || !isHardwareOutAllowed) && outActive) {
+                    if (this.processor.midiRouter.activeOutput) {
+                        try { this.processor.midiRouter.activeOutput.close(); } catch (_) {}
+                        this.processor.midiRouter.activeOutput = null;
+                        this.processor.midiRouter.activeOutputName = null;
+                    }
                 }
 
                 // Verificar si el puerto de entrada activo sigue existiendo en el bus
-                const inExists = inActive && inputs.some(i => i.name === inActive);
-                if (!inExists || !inActive) {
-                    await this._resolveAndOpenPorts();
+                if (this.options.targetMidiIn !== 'none') {
+                    const inExists = inActive && inputs.some(i => i.name === inActive);
+                    if (!inExists || !inActive) {
+                        await this._resolveAndOpenPorts();
+                    }
                 }
             } catch (err) {
                 // Silenciar errores transitorios durante desconexión de bus

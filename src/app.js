@@ -98,26 +98,39 @@ class LiveSentinelApp {
 
         const outputs = this.processor.midiRouter.listOutputs();
         let portToOpen = targetMidi;
-        if (!portToOpen) {
-            const usbPort = outputs.find(o => o.name.includes('USB2.0-MIDI'));
-            portToOpen = usbPort ? usbPort.name : (outputs[0] ? outputs[0].name : null);
+        if (!portToOpen && targetMidi !== 'none') {
+            const usbPort = outputs.find(o => o.name.toLowerCase().includes('usb'));
+            portToOpen = usbPort ? usbPort.name : null;
         }
 
-        if (portToOpen) {
+        if (portToOpen && portToOpen !== 'none') {
             try {
                 await this.processor.midiRouter.openOutput(portToOpen);
+                this.targetMidiOut = portToOpen;
             } catch (err) {
                 console.warn(`[MIDI] No se pudo abrir salida por defecto "${portToOpen}": ${err.message}. Podrás seleccionarla manualmente desde la consola.`);
             }
+        } else {
+            this.targetMidiOut = targetMidi === 'none' ? 'none' : null;
         }
 
         // Si se especifica targetMidiIn o en producción se auto-conecta si se pide
-        if (targetMidiIn) {
+        let inToOpen = targetMidiIn;
+        if (!inToOpen && targetMidiIn !== 'none') {
+            const inputs = this.processor.midiRouter.listInputs();
+            const usbIn = inputs.find(i => i.name.toLowerCase().includes('usb'));
+            inToOpen = usbIn ? usbIn.name : null;
+        }
+
+        if (inToOpen && inToOpen !== 'none') {
             try {
-                await this.processor.midiRouter.openInput(targetMidiIn);
+                await this.processor.midiRouter.openInput(inToOpen);
+                this.targetMidiIn = inToOpen;
             } catch (err) {
-                console.warn(`[MIDI] No se pudo abrir entrada "${targetMidiIn}": ${err.message}.`);
+                console.warn(`[MIDI] No se pudo abrir entrada "${inToOpen}": ${err.message}.`);
             }
+        } else {
+            this.targetMidiIn = targetMidiIn === 'none' ? 'none' : null;
         }
 
         if (this.options.autoReconnect) {
@@ -146,20 +159,27 @@ class LiveSentinelApp {
 
             // Endpoint REST de inventario inmediato de dispositivos
             if (urlPath === '/api/devices') {
-                const outputs = this.processor.midiRouter.listOutputs();
-                const inputs = this.processor.midiRouter.listInputs();
-                const payload = JSON.stringify({
-                    type: 'device_inventory',
-                    outputs,
-                    inputs,
-                    activeOutput: this.processor.midiRouter.activeOutputName,
-                    activeInput: this.processor.midiRouter.activeInputName
-                });
-                res.writeHead(200, {
-                    'Content-Type': 'application/json',
-                    'Access-Control-Allow-Origin': '*'
-                });
-                return res.end(payload);
+                (async () => {
+                    try {
+                        await this.processor.midiRouter.refresh();
+                    } catch (_) {}
+                    const outputs = this.processor.midiRouter.listOutputs();
+                    const inputs = this.processor.midiRouter.listInputs();
+                    const payload = JSON.stringify({
+                        type: 'device_inventory',
+                        outputs,
+                        inputs,
+                        activeOutput: this.processor.midiRouter.activeOutputName,
+                        activeInput: this.processor.midiRouter.activeInputName,
+                        virtualProxy: this.processor.virtualProxy ? this.processor.virtualProxy.getStatus() : null
+                    });
+                    res.writeHead(200, {
+                        'Content-Type': 'application/json',
+                        'Access-Control-Allow-Origin': '*'
+                    });
+                    res.end(payload);
+                })();
+                return;
             }
 
             // Protección contra Path Traversal: Sanitizar ruta y restringir a archivos públicos permitidos
@@ -243,10 +263,15 @@ class LiveSentinelApp {
                     }
 
                     if (msg.type === 'get_devices') {
-                        this.sendDeviceInventory(ws);
-                        ws.send(JSON.stringify({ type: 'bypass_status', enabled: this.isBypass }));
-                        ws.send(JSON.stringify({ type: 'routing_matrix', matrix: this.processor.midiRouter.getRoutingMatrix() }));
-                        ws.send(JSON.stringify({ type: 'virtual_proxy_status', status: this.processor.virtualProxy.getStatus() }));
+                        (async () => {
+                            try {
+                                await this.processor.midiRouter.refresh();
+                            } catch (_) {}
+                            this.sendDeviceInventory(ws);
+                            ws.send(JSON.stringify({ type: 'bypass_status', enabled: this.isBypass }));
+                            ws.send(JSON.stringify({ type: 'routing_matrix', matrix: this.processor.midiRouter.getRoutingMatrix() }));
+                            ws.send(JSON.stringify({ type: 'virtual_proxy_status', status: this.processor.virtualProxy.getStatus() }));
+                        })();
                         return;
                     }
 
@@ -256,9 +281,19 @@ class LiveSentinelApp {
                     }
 
                     if (msg.type === 'set_routing') {
-                        // msg: { target: 'app_b', direction: 'out', allowed: false }
+                        // msg: { target: 'hardware' | 'osc' | 'app_b', direction: 'out', allowed: false }
                         if (msg.target && msg.direction !== undefined && msg.allowed !== undefined) {
                             this.processor.midiRouter.setRoutePermission(msg.target, msg.direction, msg.allowed);
+                            if (msg.target === 'hardware' && msg.direction === 'out' && !msg.allowed) {
+                                // Si se desactiva el dispatch MIDI, desenganchar salida física activa
+                                if (this.processor.midiRouter.activeOutput) {
+                                    try { this.processor.midiRouter.activeOutput.close(); } catch (_) {}
+                                    this.processor.midiRouter.activeOutput = null;
+                                    this.processor.midiRouter.activeOutputName = null;
+                                }
+                                this.targetMidiOut = 'none';
+                                this.broadcastDeviceInventory();
+                            }
                             this.broadcastRoutingMatrix();
                         }
                         return;
@@ -309,13 +344,15 @@ class LiveSentinelApp {
 
                     if (msg.type === 'set_midi_output') {
                         try {
-                            if (msg.device === 'none') {
+                            if (!msg.device || msg.device === 'none') {
+                                this.targetMidiOut = 'none';
                                 if (this.processor.midiRouter.activeOutput) {
                                     this.processor.midiRouter.activeOutput.close();
                                     this.processor.midiRouter.activeOutput = null;
                                     this.processor.midiRouter.activeOutputName = null;
                                 }
                             } else {
+                                this.targetMidiOut = msg.device;
                                 await this.processor.midiRouter.openOutput(msg.device);
                             }
                             this.broadcastDeviceInventory();
@@ -327,7 +364,17 @@ class LiveSentinelApp {
 
                     if (msg.type === 'set_midi_input') {
                         try {
-                            await this.processor.midiRouter.openInput(msg.device);
+                            if (!msg.device || msg.device === 'none') {
+                                this.targetMidiIn = 'none';
+                                if (this.processor.midiRouter.activeInput) {
+                                    this.processor.midiRouter.activeInput.close();
+                                    this.processor.midiRouter.activeInput = null;
+                                    this.processor.midiRouter.activeInputName = null;
+                                }
+                            } else {
+                                this.targetMidiIn = msg.device;
+                                await this.processor.midiRouter.openInput(msg.device);
+                            }
                             this.broadcastDeviceInventory();
                         } catch (e) {
                             ws.send(JSON.stringify({ type: 'error', message: e.message }));
@@ -395,6 +442,9 @@ class LiveSentinelApp {
         if (this.watchdogTimer) return;
         this.watchdogTimer = setInterval(async () => {
             try {
+                // Sincronizar estado físico real de puertos en el sistema operativo
+                await this.processor.midiRouter.refresh();
+
                 const outputs = this.processor.midiRouter.listOutputs();
                 const inputs = this.processor.midiRouter.listInputs();
 
@@ -403,37 +453,59 @@ class LiveSentinelApp {
 
                 let stateChanged = false;
 
-                // 1. Verificar salida
-                const outExists = outActive && outputs.some(o => o.name === outActive);
-                if (!outExists) {
-                    let portToOpen = this.targetMidiOut;
-                    if (!portToOpen) {
-                        const usbOut = outputs.find(o => o.name.toLowerCase().includes('usb'));
-                        portToOpen = usbOut ? usbOut.name : (outputs.find(o => !o.name.includes('Wavetable'))?.name || null);
+                // 1. Verificar salida física: solo reconectar si el usuario tiene un puerto asignado explícito
+                // y NO ha elegido desconectar ('none') ni desactivar el dispatch hardware
+                const isHardwareOutAllowed = this.processor.midiRouter.isRouteAllowed('hardware', 'hardware');
+                if (this.targetMidiOut && this.targetMidiOut !== 'none' && isHardwareOutAllowed) {
+                    const outExists = outActive && outputs.some(o => o.name === outActive);
+                    if (!outExists) {
+                        let portToOpen = this.targetMidiOut;
+                        // Solo buscar puerto alternativo si targetMidiOut coincide o si se conectó un dispositivo físico USB
+                        const matchedOutput = outputs.find(o => o.name === portToOpen || o.name.toLowerCase().includes('usb'));
+                        portToOpen = matchedOutput ? matchedOutput.name : null;
+
+                        if (portToOpen && portToOpen !== outActive) {
+                            try {
+                                await this.processor.midiRouter.openOutput(portToOpen);
+                                console.log(`[WATCHDOG::HW] Salida MIDI reconectada: "${portToOpen}"`);
+                                stateChanged = true;
+                            } catch (_) {}
+                        }
                     }
-                    if (portToOpen && portToOpen !== outActive) {
-                        try {
-                            await this.processor.midiRouter.openOutput(portToOpen);
-                            console.log(`[WATCHDOG::HW] Salida MIDI reconectada: "${portToOpen}"`);
-                            stateChanged = true;
-                        } catch (_) {}
+                } else if ((this.targetMidiOut === 'none' || !isHardwareOutAllowed) && outActive) {
+                    // Si el usuario eligió 'none' o apagó el dispatch MIDI, asegurar que la salida quede cerrada
+                    if (this.processor.midiRouter.activeOutput) {
+                        try { this.processor.midiRouter.activeOutput.close(); } catch (_) {}
+                        this.processor.midiRouter.activeOutput = null;
+                        this.processor.midiRouter.activeOutputName = null;
+                        stateChanged = true;
                     }
                 }
 
-                // 2. Verificar entrada
-                const inExists = inActive && inputs.some(i => i.name === inActive);
-                if (!inExists) {
-                    let inToOpen = this.targetMidiIn;
-                    if (!inToOpen) {
-                        const usbIn = inputs.find(i => i.name.toLowerCase().includes('usb'));
-                        inToOpen = usbIn ? usbIn.name : (inputs[0]?.name || null);
+                // 2. Verificar entrada física: solo reconectar si el usuario tiene un puerto asignado explícito
+                // y NO ha elegido desconectar ('none')
+                if (this.targetMidiIn && this.targetMidiIn !== 'none') {
+                    const inExists = inActive && inputs.some(i => i.name === inActive);
+                    if (!inExists) {
+                        let inToOpen = this.targetMidiIn;
+                        const matchedInput = inputs.find(i => i.name === inToOpen || i.name.toLowerCase().includes('usb'));
+                        inToOpen = matchedInput ? matchedInput.name : null;
+
+                        if (inToOpen && inToOpen !== inActive) {
+                            try {
+                                await this.processor.midiRouter.openInput(inToOpen);
+                                console.log(`[WATCHDOG::HW] Entrada MIDI reconectada: "${inToOpen}"`);
+                                stateChanged = true;
+                            } catch (_) {}
+                        }
                     }
-                    if (inToOpen && inToOpen !== inActive) {
-                        try {
-                            await this.processor.midiRouter.openInput(inToOpen);
-                            console.log(`[WATCHDOG::HW] Entrada MIDI reconectada: "${inToOpen}"`);
-                            stateChanged = true;
-                        } catch (_) {}
+                } else if (this.targetMidiIn === 'none' && inActive) {
+                    // Si el usuario eligió 'none', asegurar que la entrada quede cerrada
+                    if (this.processor.midiRouter.activeInput) {
+                        try { this.processor.midiRouter.activeInput.close(); } catch (_) {}
+                        this.processor.midiRouter.activeInput = null;
+                        this.processor.midiRouter.activeInputName = null;
+                        stateChanged = true;
                     }
                 }
 

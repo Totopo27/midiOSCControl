@@ -1464,28 +1464,60 @@
         toggleMidi.addEventListener('click', () => {
             isMidiEnabled = !isMidiEnabled;
             toggleMidi.classList.toggle('active', isMidiEnabled);
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({
+                    type: 'set_routing',
+                    target: 'hardware',
+                    direction: 'out',
+                    allowed: isMidiEnabled
+                }));
+            }
         });
 
         toggleOsc.addEventListener('click', () => {
             isOscEnabled = !isOscEnabled;
             toggleOsc.classList.toggle('active', isOscEnabled);
-        });
-
-        btnRefreshDevices.addEventListener('click', () => {
-            if (ws.readyState === WebSocket.OPEN) {
-                ws.send(JSON.stringify({ type: 'get_devices' }));
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({
+                    type: 'set_routing',
+                    target: 'osc',
+                    direction: 'out',
+                    allowed: isOscEnabled
+                }));
             }
         });
 
+        btnRefreshDevices.addEventListener('click', () => {
+            btnRefreshDevices.textContent = 'ESCANEANDO...';
+            btnRefreshDevices.disabled = true;
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: 'get_devices' }));
+            }
+            fetch('/api/devices')
+                .then(res => res.json())
+                .then(data => {
+                    updateDeviceDropdowns(data);
+                })
+                .catch(() => {})
+                .finally(() => {
+                    setTimeout(() => {
+                        btnRefreshDevices.textContent = 'REFRESCAR PUERTOS';
+                        btnRefreshDevices.disabled = false;
+                    }, 500);
+                });
+        });
+
         selectMidiIn.addEventListener('change', (e) => {
-            if (ws.readyState === WebSocket.OPEN) {
-                ws.send(JSON.stringify({ type: 'set_midi_input', device: e.target.value }));
+            const val = e.target.value;
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: 'set_midi_input', device: val }));
             }
         });
 
         selectMidiOut.addEventListener('change', (e) => {
-            if (ws.readyState === WebSocket.OPEN) {
-                ws.send(JSON.stringify({ type: 'set_midi_output', device: e.target.value }));
+            const val = e.target.value;
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: 'set_midi_output', device: val }));
             }
         });
 
@@ -1667,6 +1699,17 @@
                         updateLearnButtonUI(payload.active);
                     } else if (payload.type === 'device_inventory') {
                         updateDeviceDropdowns(payload);
+                    } else if (payload.type === 'routing_matrix') {
+                        if (payload.matrix) {
+                            if (payload.matrix.hardware && payload.matrix.hardware.allowOut !== undefined) {
+                                isMidiEnabled = !!payload.matrix.hardware.allowOut;
+                                toggleMidi.classList.toggle('active', isMidiEnabled);
+                            }
+                            if (payload.matrix.osc && payload.matrix.osc.allowOut !== undefined) {
+                                isOscEnabled = !!payload.matrix.osc.allowOut;
+                                toggleOsc.classList.toggle('active', isOscEnabled);
+                            }
+                        }
                     } else if (payload.type === 'sessions_list') {
                         updateSessionsUI(payload.sessions);
                     } else if (payload.type === 'bypass_status') {
