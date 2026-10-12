@@ -1,31 +1,91 @@
 <!DOCTYPE html>
-<html lang="es">
+<html lang="es" data-theme="dark">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MIDI Control Center - Mapping & Monitor</title>
+    <title>MIDI & OSC Control Center - Mapping & Monitor</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
+        /* ==========================================================================
+           COLOR SYSTEM & TOKENS (Unificado con midiosc_monitor.html - Tactical Deep Carbon)
+           ========================================================================== */
         :root {
-            --bg-main: #121316;
-            --bg-panel: #1a1b1e;
-            --bg-card: #222328;
-            --bg-input: #101113;
-            --border-subtle: #2d3036;
-            --border-focus: #3b82f6;
+            /* MODO OSCURO (Default - Tactical Deep Carbon) */
+            --bg-canvas: #090d16;
+            --bg-surface: #0f1420;
+            --bg-panel: #141b2b;
+            --bg-panel-hover: #1c253b;
+            --bg-table-header: #121826;
+            --bg-table-zebra: rgba(255, 255, 255, 0.015);
             
-            --text-main: #e2e8f0;
-            --text-muted: #848a96;
-            --text-heading: #f8fafc;
+            --border-hairline: rgba(255, 255, 255, 0.08);
+            --border-focus: rgba(6, 182, 212, 0.45);
+            --border-hover: rgba(255, 255, 255, 0.16);
 
-            --accent-green: #10b981;
-            --accent-blue: #3b82f6;
+            --text-primary: #f8fafc;
+            --text-secondary: #94a3b8;
+            --text-muted: #64748b;
+            --text-dim: #475569;
+
             --accent-cyan: #06b6d4;
-            --accent-red: #ef4444;
-            --accent-yellow: #f59e0b;
-            
-            --row-selected: #1e3a8a;
-            --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-            --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+            --accent-cyan-glow: rgba(6, 182, 212, 0.25);
+            --accent-violet: #a855f7;
+            --accent-violet-glow: rgba(168, 85, 247, 0.25);
+
+            --led-green: #10b981;
+            --led-green-glow: rgba(16, 185, 129, 0.35);
+            --led-amber: #f59e0b;
+            --led-red: #ef4444;
+
+            --panic-red-bg: linear-gradient(180deg, #dc2626, #b91c1c);
+            --panic-red-border: #ef4444;
+            --panic-red-hover: linear-gradient(180deg, #ef4444, #dc2626);
+            --panic-shadow: rgba(220, 38, 38, 0.35);
+
+            --grid-line: rgba(255, 255, 255, 0.018);
+            --shadow-panel: 0 8px 24px rgba(0, 0, 0, 0.45);
+
+            --font-ui: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+            --font-mono: 'JetBrains Mono', 'Geist Mono', monospace;
+        }
+
+        /* MODO CLARO (Daylight Lab / High Precision Slate) */
+        [data-theme="light"] {
+            --bg-canvas: #f1f5f9;
+            --bg-surface: #ffffff;
+            --bg-panel: #f8fafc;
+            --bg-panel-hover: #edf2f7;
+            --bg-table-header: #e2e8f0;
+            --bg-table-zebra: rgba(0, 0, 0, 0.02);
+
+            --border-hairline: #cbd5e1;
+            --border-focus: #0284c7;
+            --border-hover: #94a3b8;
+
+            --text-primary: #0f172a;
+            --text-secondary: #334155;
+            --text-muted: #64748b;
+            --text-dim: #94a3b8;
+
+            --accent-cyan: #0284c7;
+            --accent-cyan-glow: rgba(2, 132, 199, 0.2);
+            --accent-violet: #7c3aed;
+            --accent-violet-glow: rgba(124, 58, 237, 0.2);
+
+            --led-green: #059669;
+            --led-green-glow: rgba(5, 150, 105, 0.3);
+            --led-amber: #d97706;
+            --led-red: #dc2626;
+
+            --panic-red-bg: linear-gradient(180deg, #dc2626, #b91c1c);
+            --panic-red-border: #b91c1c;
+            --panic-red-hover: linear-gradient(180deg, #b91c1c, #991b1b);
+            --panic-shadow: rgba(220, 38, 38, 0.25);
+
+            --grid-line: rgba(0, 0, 0, 0.035);
+            --shadow-panel: 0 4px 16px rgba(15, 23, 42, 0.08);
         }
 
         * {
@@ -33,73 +93,134 @@
             margin: 0;
             padding: 0;
             user-select: none;
+            transition: background-color 0.18s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.18s ease, color 0.18s ease;
         }
 
         body {
             font-family: var(--font-ui);
-            background-color: var(--bg-main);
-            color: var(--text-main);
+            background-color: var(--bg-canvas);
+            color: var(--text-primary);
             height: 100vh;
             display: flex;
             flex-direction: column;
             overflow: hidden;
+            background-image: 
+                linear-gradient(var(--grid-line) 1px, transparent 1px),
+                linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
+            background-size: 28px 28px, 28px 28px;
         }
 
-        /* Top Bar */
+        /* --- STAGE HEADER & MISSION CONTROLS --- */
         header {
-            height: 52px;
-            background-color: var(--bg-panel);
-            border-bottom: 1px solid var(--border-subtle);
+            height: 56px;
+            background: var(--bg-surface);
+            border-bottom: 1px solid var(--border-hairline);
             display: flex;
             align-items: center;
             justify-content: space-between;
-            padding: 0 16px;
+            padding: 0 20px;
             gap: 16px;
+            box-shadow: var(--shadow-panel);
+            z-index: 20;
         }
 
         .header-title-group {
             display: flex;
             align-items: center;
-            gap: 12px;
+            gap: 14px;
         }
 
         .brand-badge {
-            font-weight: 800;
-            font-size: 0.95rem;
-            letter-spacing: 0.5px;
-            color: var(--text-heading);
             display: flex;
             align-items: center;
-            gap: 6px;
+            gap: 8px;
+        }
+
+        .console-title {
+            font-size: 1.05rem;
+            font-weight: 700;
+            letter-spacing: 0.08em;
+            color: var(--text-primary);
+            font-family: var(--font-mono);
+            text-transform: uppercase;
+        }
+
+        .badge-sub {
+            font-family: var(--font-mono);
+            font-size: 0.65rem;
+            font-weight: 700;
+            color: var(--accent-cyan);
+            background: rgba(6, 182, 212, 0.12);
+            border: 1px solid rgba(6, 182, 212, 0.35);
+            padding: 2px 6px;
+            border-radius: 4px;
+            letter-spacing: 0.08em;
+        }
+
+        .pilot-lamp {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.72rem;
+            font-family: var(--font-mono);
+            font-weight: 600;
+            color: var(--text-secondary);
+            background: var(--bg-panel);
+            padding: 5px 12px;
+            border-radius: 6px;
+            border: 1px solid var(--border-hairline);
+        }
+
+        .led-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background-color: var(--led-green);
+            box-shadow: 0 0 10px var(--led-green-glow);
+            animation: pulse-glow 2s infinite ease-in-out;
+        }
+
+        @keyframes pulse-glow {
+            0%, 100% { opacity: 0.85; filter: drop-shadow(0 0 3px var(--led-green)); }
+            50% { opacity: 1; filter: drop-shadow(0 0 6px var(--led-green)); }
         }
 
         .nav-tabs {
             display: flex;
-            background-color: var(--bg-main);
-            padding: 2px;
+            background: var(--bg-panel);
+            padding: 3px;
             border-radius: 6px;
-            border: 1px solid var(--border-subtle);
+            border: 1px solid var(--border-hairline);
+            gap: 4px;
         }
 
         .nav-tab {
             padding: 6px 14px;
-            font-size: 0.8rem;
+            font-size: 0.75rem;
             font-weight: 600;
             border-radius: 4px;
             cursor: pointer;
             color: var(--text-muted);
-            border: none;
+            border: 1px solid transparent;
             background: transparent;
+            font-family: var(--font-mono);
+            letter-spacing: 0.06em;
             transition: all 0.15s ease;
         }
 
-        .nav-tab.active {
-            background-color: var(--bg-card);
-            color: var(--text-heading);
-            box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+        .nav-tab:hover {
+            color: var(--text-primary);
+            border-color: var(--border-hover);
         }
 
-        /* Device Selector Pill (Estilo Akai verde central) */
+        .nav-tab.active {
+            background: rgba(6, 182, 212, 0.14);
+            color: var(--accent-cyan);
+            border-color: var(--accent-cyan);
+            box-shadow: 0 0 10px var(--accent-cyan-glow);
+        }
+
+        /* Selector Central del Dispositivo Activo */
         .device-selector-wrap {
             display: flex;
             align-items: center;
@@ -107,18 +228,26 @@
         }
 
         .device-pill {
-            background-color: #059669;
-            color: #ffffff;
-            font-weight: 700;
-            font-size: 0.82rem;
+            background: var(--bg-panel);
+            color: var(--text-primary);
+            font-family: var(--font-mono);
+            font-weight: 600;
+            font-size: 0.78rem;
             padding: 6px 14px;
             border-radius: 6px;
             display: flex;
             align-items: center;
             gap: 8px;
             cursor: pointer;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.25);
-            border: 1px solid rgba(255,255,255,0.15);
+            border: 1px solid var(--border-hairline);
+            box-shadow: var(--shadow-panel);
+            transition: all 0.15s ease;
+        }
+
+        .device-pill:hover {
+            border-color: var(--accent-cyan);
+            box-shadow: 0 0 10px var(--accent-cyan-glow);
+            color: var(--text-primary);
         }
 
         .header-actions {
@@ -128,22 +257,47 @@
         }
 
         .btn-panic {
-            background-color: #dc2626;
-            color: white;
+            background: var(--panic-red-bg);
+            border: 1px solid var(--panic-red-border);
+            color: #ffffff;
+            font-family: var(--font-mono);
             font-weight: 700;
-            font-size: 0.75rem;
-            padding: 6px 12px;
-            border-radius: 4px;
-            border: none;
+            font-size: 0.72rem;
+            padding: 6px 14px;
+            border-radius: 6px;
             cursor: pointer;
-            transition: background 0.15s;
+            box-shadow: 0 0 10px var(--panic-shadow);
+            letter-spacing: 0.08em;
+            transition: all 0.15s ease;
         }
 
         .btn-panic:hover {
-            background-color: #b91c1c;
+            background: var(--panic-red-hover);
+            box-shadow: 0 0 14px var(--panic-shadow);
         }
 
-        /* Main Workspace Container */
+        .theme-switch-btn {
+            background: var(--bg-panel);
+            border: 1px solid var(--border-hairline);
+            color: var(--text-secondary);
+            font-family: var(--font-mono);
+            font-size: 0.72rem;
+            font-weight: 600;
+            padding: 6px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            letter-spacing: 0.08em;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .theme-switch-btn:hover {
+            border-color: var(--border-hover);
+            color: var(--text-primary);
+        }
+
+        /* --- MAIN WORKSPACE CONTAINER --- */
         .main-workspace {
             flex: 1;
             display: flex;
@@ -155,8 +309,8 @@
             flex: 1;
             display: flex;
             flex-direction: column;
-            border-right: 1px solid var(--border-subtle);
-            background-color: var(--bg-main);
+            border-right: 1px solid var(--border-hairline);
+            background-color: var(--bg-surface);
             overflow: hidden;
         }
 
@@ -170,109 +324,115 @@
             width: 100%;
             border-collapse: collapse;
             text-align: left;
-            font-size: 0.82rem;
+            font-size: 0.8rem;
         }
 
         table.matrix-table thead {
             position: sticky;
             top: 0;
             z-index: 10;
-            background-color: var(--bg-panel);
-            border-bottom: 1px solid var(--border-subtle);
+            background-color: var(--bg-table-header);
+            border-bottom: 1px solid var(--border-hairline);
         }
 
         table.matrix-table th {
             padding: 8px 12px;
-            font-size: 0.72rem;
+            font-family: var(--font-mono);
+            font-size: 0.68rem;
             text-transform: uppercase;
-            letter-spacing: 0.6px;
+            letter-spacing: 0.08em;
             color: var(--text-muted);
             font-weight: 600;
             white-space: nowrap;
         }
 
         table.matrix-table td {
-            padding: 7px 12px;
-            border-bottom: 1px solid #1c1e22;
+            padding: 8px 12px;
+            border-bottom: 1px solid var(--border-hairline);
             font-family: var(--font-mono);
-            font-size: 0.8rem;
+            font-size: 0.78rem;
+            color: var(--text-primary);
             white-space: nowrap;
         }
 
         table.matrix-table tbody tr {
             cursor: pointer;
-            transition: background 0.1s ease;
+            transition: background 0.12s ease;
         }
 
         table.matrix-table tbody tr:hover {
-            background-color: rgba(255, 255, 255, 0.03);
+            background-color: var(--bg-panel-hover);
         }
 
         table.matrix-table tbody tr.selected {
-            background-color: var(--row-selected) !important;
-            color: #ffffff;
+            background-color: rgba(6, 182, 212, 0.12) !important;
+            border-left: 3px solid var(--accent-cyan);
+            color: var(--text-primary);
         }
 
         /* Indicador de actividad en vivo (Led dot) */
         .activity-dot {
-            width: 9px;
-            height: 9px;
+            width: 8px;
+            height: 8px;
             border-radius: 50%;
             display: inline-block;
-            background-color: #4b5563;
+            background-color: var(--text-dim);
             transition: background-color 0.15s, box-shadow 0.15s;
         }
 
         .activity-dot.active-cc {
             background-color: var(--accent-cyan);
-            box-shadow: 0 0 8px var(--accent-cyan);
+            box-shadow: 0 0 8px var(--accent-cyan-glow);
         }
 
         .activity-dot.active-note {
-            background-color: var(--accent-green);
-            box-shadow: 0 0 8px var(--accent-green);
+            background-color: var(--led-green);
+            box-shadow: 0 0 8px var(--led-green-glow);
         }
 
         /* Matrix Bottom Controls (+ Add Rule) */
         .master-toolbar {
-            height: 42px;
-            background-color: var(--bg-panel);
-            border-top: 1px solid var(--border-subtle);
+            height: 44px;
+            background-color: var(--bg-surface);
+            border-top: 1px solid var(--border-hairline);
             display: flex;
             align-items: center;
-            padding: 0 12px;
+            padding: 0 14px;
             gap: 8px;
         }
 
         .btn-icon {
             width: 28px;
             height: 28px;
-            background-color: var(--bg-card);
-            border: 1px solid var(--border-subtle);
-            color: var(--text-main);
+            background-color: var(--bg-panel);
+            border: 1px solid var(--border-hairline);
+            color: var(--text-secondary);
             border-radius: 4px;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 1.1rem;
+            font-family: var(--font-mono);
+            font-size: 1rem;
             cursor: pointer;
-            font-weight: bold;
+            transition: all 0.15s ease;
         }
 
         .btn-icon:hover {
-            border-color: var(--accent-blue);
-            color: #fff;
+            border-color: var(--accent-cyan);
+            color: var(--accent-cyan);
+            box-shadow: 0 0 6px var(--accent-cyan-glow);
         }
 
         /* Right Detail Inspector */
         .inspector-panel {
             width: 340px;
-            background-color: var(--bg-panel);
+            background-color: var(--bg-surface);
+            border-left: 1px solid var(--border-hairline);
             display: flex;
             flex-direction: column;
             overflow-y: auto;
             padding: 16px;
-            gap: 18px;
+            gap: 16px;
         }
 
         .inspector-section {
@@ -289,23 +449,27 @@
         }
 
         .inspector-label {
-            font-size: 0.8rem;
-            font-weight: 500;
+            font-family: var(--font-mono);
+            font-size: 0.72rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
             color: var(--text-muted);
             min-width: 90px;
         }
 
         .inspector-input, select.inspector-select {
             flex: 1;
-            background-color: var(--bg-input);
-            border: 1px solid var(--border-subtle);
-            border-radius: 4px;
-            padding: 6px 10px;
-            font-size: 0.82rem;
-            color: var(--text-main);
+            background-color: var(--bg-panel);
+            border: 1px solid var(--border-hairline);
+            border-radius: 6px;
+            padding: 7px 10px;
+            font-size: 0.78rem;
+            color: var(--text-primary);
             font-family: var(--font-mono);
             outline: none;
             text-align: right;
+            transition: border-color 0.15s ease;
         }
 
         select.inspector-select {
@@ -314,7 +478,8 @@
         }
 
         .inspector-input:focus, select.inspector-select:focus {
-            border-color: var(--accent-blue);
+            border-color: var(--accent-cyan);
+            box-shadow: 0 0 8px var(--accent-cyan-glow);
         }
 
         /* Toggle switch */
@@ -335,7 +500,8 @@
             position: absolute;
             cursor: pointer;
             top: 0; left: 0; right: 0; bottom: 0;
-            background-color: #374151;
+            background-color: var(--bg-panel);
+            border: 1px solid var(--border-hairline);
             transition: .2s;
             border-radius: 20px;
         }
@@ -343,34 +509,38 @@
         .slider:before {
             position: absolute;
             content: "";
-            height: 14px;
-            width: 14px;
+            height: 12px;
+            width: 12px;
             left: 3px;
             bottom: 3px;
-            background-color: white;
+            background-color: var(--text-secondary);
             transition: .2s;
             border-radius: 50%;
         }
 
         input:checked + .slider {
-            background-color: var(--accent-blue);
+            background-color: var(--accent-cyan);
+            border-color: var(--accent-cyan);
+            box-shadow: 0 0 8px var(--accent-cyan-glow);
         }
 
         input:checked + .slider:before {
             transform: translateX(16px);
+            background-color: #ffffff;
         }
 
         /* Botón Learn */
         .btn-learn {
             width: 100%;
-            background-color: #374151;
-            color: #f3f4f6;
-            border: 1px solid var(--border-subtle);
-            border-radius: 4px;
+            background-color: var(--bg-panel);
+            color: var(--text-secondary);
+            border: 1px solid var(--border-hairline);
+            border-radius: 6px;
             padding: 8px 12px;
+            font-family: var(--font-mono);
             font-weight: 700;
-            font-size: 0.82rem;
-            letter-spacing: 1px;
+            font-size: 0.78rem;
+            letter-spacing: 0.08em;
             cursor: pointer;
             display: flex;
             align-items: center;
@@ -380,13 +550,15 @@
         }
 
         .btn-learn:hover {
-            background-color: #4b5563;
+            border-color: var(--border-hover);
+            color: var(--text-primary);
         }
 
         .btn-learn.listening {
-            background-color: #b45309;
-            color: #fff;
-            border-color: #f59e0b;
+            background-color: rgba(245, 158, 11, 0.15);
+            color: var(--led-amber);
+            border-color: var(--led-amber);
+            box-shadow: 0 0 12px rgba(245, 158, 11, 0.35);
             animation: pulse-learn 1.2s infinite;
         }
 
@@ -398,9 +570,9 @@
 
         /* Curva Gráfica Interactiva */
         .curve-preview-box {
-            background-color: #0b0c0e;
-            border: 1px solid var(--border-subtle);
-            border-radius: 4px;
+            background-color: var(--bg-panel);
+            border: 1px solid var(--border-hairline);
+            border-radius: 6px;
             height: 100px;
             position: relative;
             overflow: hidden;
@@ -413,17 +585,22 @@
 
         /* Bottom Activity Bar (Slots / Bus visual) */
         footer.bus-footer {
-            height: 38px;
-            background-color: var(--bg-panel);
-            border-top: 1px solid var(--border-subtle);
+            height: 40px;
+            background-color: var(--bg-surface);
+            border-top: 1px solid var(--border-hairline);
             display: flex;
             align-items: center;
-            padding: 0 12px;
+            padding: 0 16px;
             gap: 12px;
-            font-size: 0.75rem;
+            font-size: 0.72rem;
+            box-shadow: var(--shadow-panel);
         }
 
         .bus-label {
+            font-family: var(--font-mono);
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
             font-weight: 700;
             color: var(--text-muted);
             white-space: nowrap;
@@ -431,36 +608,40 @@
 
         .slots-strip {
             display: flex;
-            gap: 3px;
+            gap: 4px;
             overflow-x: auto;
             flex: 1;
             padding-bottom: 2px;
         }
 
         .slot-pill {
-            min-width: 22px;
-            height: 20px;
-            background-color: #1f2937;
-            color: #9ca3af;
-            border-radius: 3px;
+            min-width: 24px;
+            height: 22px;
+            background-color: var(--bg-panel);
+            border: 1px solid var(--border-hairline);
+            color: var(--text-dim);
+            border-radius: 4px;
             display: flex;
             align-items: center;
             justify-content: center;
             font-size: 0.68rem;
             font-family: var(--font-mono);
             font-weight: 600;
+            transition: all 0.15s ease;
         }
 
         .slot-pill.mapped {
-            background-color: var(--accent-cyan);
-            color: #0f172a;
+            background-color: rgba(6, 182, 212, 0.15);
+            border-color: var(--accent-cyan);
+            color: var(--accent-cyan);
         }
 
         .slot-pill.active {
-            background-color: #ffffff;
-            color: #000000;
-            box-shadow: 0 0 6px #fff;
+            background-color: var(--led-green);
+            color: #ffffff;
+            box-shadow: 0 0 8px var(--led-green-glow);
         }
+
         /* Shift Engine & Pad Matrix Overlay View */
         .view-content {
             display: none;
@@ -476,22 +657,23 @@
             flex: 1;
             display: flex;
             flex-direction: column;
-            background-color: var(--bg-main);
+            background-color: var(--bg-canvas);
             overflow-y: auto;
             padding: 16px;
             gap: 16px;
         }
 
         .shift-control-bar {
-            background-color: var(--bg-panel);
-            border: 1px solid var(--border-subtle);
-            border-radius: 6px;
-            padding: 10px 16px;
+            background-color: var(--bg-surface);
+            border: 1px solid var(--border-hairline);
+            border-radius: 8px;
+            padding: 12px 18px;
             display: flex;
             flex-wrap: wrap;
             align-items: center;
             justify-content: space-between;
             gap: 16px;
+            box-shadow: var(--shadow-panel);
         }
 
         .control-group {
@@ -501,61 +683,65 @@
         }
 
         .control-label {
-            font-size: 0.75rem;
+            font-family: var(--font-mono);
+            font-size: 0.72rem;
             color: var(--text-muted);
             text-transform: uppercase;
             font-weight: 700;
-            letter-spacing: 0.5px;
+            letter-spacing: 0.08em;
         }
 
         .status-pill {
-            background-color: var(--bg-card);
-            border: 1px solid var(--border-subtle);
-            border-radius: 4px;
-            padding: 4px 10px;
+            background-color: var(--bg-panel);
+            border: 1px solid var(--border-hairline);
+            border-radius: 6px;
+            padding: 5px 12px;
             font-family: var(--font-mono);
-            font-size: 0.82rem;
+            font-size: 0.78rem;
             font-weight: 700;
-            color: var(--accent-yellow);
+            color: var(--led-amber);
         }
 
         .layer-badge {
             display: flex;
-            border-radius: 4px;
+            border-radius: 6px;
             overflow: hidden;
-            border: 1px solid var(--border-subtle);
+            border: 1px solid var(--border-hairline);
         }
 
         .layer-option {
-            padding: 5px 12px;
-            font-size: 0.75rem;
+            padding: 6px 14px;
+            font-family: var(--font-mono);
+            font-size: 0.72rem;
             font-weight: 700;
             cursor: pointer;
-            background-color: var(--bg-card);
+            background-color: var(--bg-panel);
             color: var(--text-muted);
             border: none;
-            transition: all 0.15s;
+            letter-spacing: 0.06em;
+            transition: all 0.15s ease;
         }
 
         .layer-option.selected-base {
-            background-color: var(--accent-blue);
-            color: #ffffff;
+            background-color: rgba(6, 182, 212, 0.2);
+            color: var(--accent-cyan);
         }
 
         .layer-option.selected-shift {
-            background-color: var(--accent-yellow);
-            color: #121316;
+            background-color: rgba(245, 158, 11, 0.2);
+            color: var(--led-amber);
         }
 
         .matrix-container {
-            background-color: var(--bg-panel);
-            border: 1px solid var(--border-subtle);
-            border-radius: 6px;
-            padding: 16px;
+            background-color: var(--bg-surface);
+            border: 1px solid var(--border-hairline);
+            border-radius: 8px;
+            padding: 18px;
             display: flex;
             flex-direction: column;
             align-items: center;
-            gap: 12px;
+            gap: 14px;
+            box-shadow: var(--shadow-panel);
         }
 
         .pad-grid {
@@ -567,57 +753,61 @@
 
         .pad {
             aspect-ratio: 1 / 1;
-            background-color: var(--bg-card);
-            border: 1px solid var(--border-subtle);
-            border-radius: 5px;
+            background-color: var(--bg-panel);
+            border: 1px solid var(--border-hairline);
+            border-radius: 6px;
             display: flex;
             flex-direction: column;
             justify-content: space-between;
-            padding: 6px;
+            padding: 8px 6px;
+            font-family: var(--font-mono);
             font-size: 0.72rem;
-            color: var(--text-muted);
+            color: var(--text-secondary);
             cursor: pointer;
-            transition: all 0.12s ease;
+            transition: all 0.15s ease;
             user-select: none;
         }
 
         .pad:hover {
-            border-color: var(--accent-blue);
+            border-color: var(--border-hover);
             transform: translateY(-1px);
         }
 
         .pad.is-shift-trigger {
-            border-color: var(--accent-yellow);
-            box-shadow: 0 0 10px rgba(245, 158, 11, 0.35);
-            background: linear-gradient(135deg, var(--bg-card) 0%, rgba(245, 158, 11, 0.15) 100%);
+            border-color: var(--led-amber);
+            box-shadow: 0 0 12px rgba(245, 158, 11, 0.35);
+            background: linear-gradient(135deg, var(--bg-panel) 0%, rgba(245, 158, 11, 0.18) 100%);
         }
 
         .pad.is-shift-trigger .pad-role {
-            color: var(--accent-yellow);
-            font-weight: bold;
+            color: var(--led-amber);
+            font-weight: 700;
         }
 
         .pad.active-on {
-            border-color: var(--accent-green);
-            box-shadow: 0 0 8px rgba(16, 185, 129, 0.4);
-            background: rgba(16, 185, 129, 0.18);
+            border-color: var(--led-green);
+            box-shadow: 0 0 10px var(--led-green-glow);
+            background: rgba(16, 185, 129, 0.15);
+            color: #ffffff;
         }
 
         .pad-note {
             font-family: var(--font-mono);
-            font-size: 0.8rem;
+            font-size: 0.82rem;
             font-weight: 700;
-            color: var(--text-heading);
+            color: var(--text-primary);
         }
 
         .pad-chnl {
-            font-size: 0.68rem;
-            color: var(--text-muted);
+            font-size: 0.65rem;
+            color: var(--text-dim);
         }
 
         .pad-role {
-            font-size: 0.62rem;
+            font-size: 0.65rem;
+            font-weight: 600;
             text-transform: uppercase;
+            letter-spacing: 0.05em;
             align-self: flex-end;
         }
 
@@ -625,19 +815,24 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
-            border-top: 1px solid var(--border-subtle);
+            border-top: 1px solid var(--border-hairline);
             padding-top: 14px;
+            width: 100%;
         }
     </style>
 </head>
 <body>
 
-    <!-- Header Superior -->
+    <!-- Header Superior Estilo Tactical Mission Control -->
     <header>
         <div class="header-title-group">
             <div class="brand-badge">
-                <span>🎛️</span>
-                <span>MIDICONTROL</span>
+                <span class="console-title">midiOSCControl</span>
+                <span class="badge-sub">STUDIO</span>
+            </div>
+            <div class="pilot-lamp">
+                <span class="led-dot" id="socket-led"></span>
+                <span id="connection-status">● CONECTADO</span>
             </div>
             <div class="nav-tabs">
                 <button class="nav-tab active" onclick="switchMainTab('mapping')">Mapping Matrix</button>
@@ -649,14 +844,18 @@
         <!-- Selector Central del Dispositivo Activo -->
         <div class="device-selector-wrap">
             <div class="device-pill" id="device-pill" title="Click para cambiar interfaz física">
-                <span id="active-device-name">AKAI APC-40 MK2</span>
-                <span style="font-size: 0.7rem;">▼</span>
+                <span style="width: 6px; height: 6px; border-radius: 50%; background: var(--accent-cyan); box-shadow: 0 0 6px var(--accent-cyan-glow);"></span>
+                <span id="active-device-name">USB2.0-MIDI</span>
+                <span style="font-size: 0.65rem; color: var(--text-dim); margin-left: 4px;">▼</span>
             </div>
         </div>
 
         <div class="header-actions">
-            <span style="font-size: 0.75rem; color: var(--accent-green);" id="connection-status">● ONLINE</span>
-            <button class="btn-panic" onclick="triggerPanic()">PANIC</button>
+            <button class="btn-panic" onclick="triggerPanic()" title="Enviar All Notes Off a todos los canales">PANIC</button>
+            <button class="theme-switch-btn" id="btn-theme-toggle" title="Alternar entre modo oscuro y modo claro">
+                <span id="theme-icon">[◐]</span>
+                <span id="theme-label">TEMA: OSCURO</span>
+            </button>
         </div>
     </header>
 
@@ -727,7 +926,7 @@
             <div class="master-toolbar">
                 <button class="btn-icon" title="Agregar nueva regla" onclick="addNewRule()">+</button>
                 <button class="btn-icon" title="Eliminar regla seleccionada" onclick="deleteSelectedRule()">−</button>
-                <span style="font-size: 0.75rem; color: var(--text-muted); margin-left: 8px;">3 reglas configuradas</span>
+                <span style="font-family: var(--font-mono); font-size: 0.72rem; color: var(--text-muted); margin-left: 8px;">3 reglas configuradas</span>
             </div>
         </div>
 
@@ -736,7 +935,7 @@
             
             <!-- Habilitar Regla -->
             <div class="inspector-row">
-                <span class="inspector-label" style="font-weight: 600; color: var(--text-heading);">Habilitado</span>
+                <span class="inspector-label" style="color: var(--text-primary); font-weight: 700;">Habilitado</span>
                 <label class="switch">
                     <input type="checkbox" id="field-enabled" checked>
                     <span class="slider"></span>
@@ -772,7 +971,7 @@
                 </div>
             </div>
 
-            <hr style="border: 0; border-top: 1px solid var(--border-subtle);">
+            <hr style="border: 0; border-top: 1px solid var(--border-hairline);">
 
             <!-- Sección Destino y Ruteo -->
             <div class="inspector-section">
@@ -800,7 +999,7 @@
                 </div>
             </div>
 
-            <hr style="border: 0; border-top: 1px solid var(--border-subtle);">
+            <hr style="border: 0; border-top: 1px solid var(--border-hairline);">
 
             <!-- Sección Curva y Rangos -->
             <div class="inspector-section">
@@ -827,9 +1026,9 @@
                 <!-- Preview de la curva gráfica -->
                 <div class="curve-preview-box">
                     <svg class="curve-svg" viewBox="0 0 100 100" preserveAspectRatio="none">
-                        <line x1="0" y1="100" x2="100" y2="100" stroke="#2d3036" stroke-width="1"/>
-                        <line x1="0" y1="0" x2="0" y2="100" stroke="#2d3036" stroke-width="1"/>
-                        <path id="curve-path" d="M 0 100 L 100 0" fill="none" stroke="#e2e8f0" stroke-width="2"/>
+                        <line x1="0" y1="100" x2="100" y2="100" stroke="var(--border-hairline)" stroke-width="1"/>
+                        <line x1="0" y1="0" x2="0" y2="100" stroke="var(--border-hairline)" stroke-width="1"/>
+                        <path id="curve-path" d="M 0 100 L 100 0" fill="none" stroke="var(--accent-cyan)" stroke-width="2"/>
                     </svg>
                 </div>
             </div>
@@ -849,21 +1048,16 @@
                 </div>
 
                 <div class="control-group">
-                    <span class="control-label">Modo Gatillo</span>
-                    <button class="nav-tab" style="background: var(--bg-card); border: 1px solid var(--border-subtle);" id="btnToggleMode" onclick="toggleShiftMode()">TOGGLE</button>
+                    <span class="control-label">Interaction Mode</span>
+                    <button class="nav-tab active" id="btnToggleMode" onclick="toggleShiftMode()">TOGGLE</button>
                 </div>
 
                 <div class="control-group">
-                    <span class="control-label">Capa Activa</span>
+                    <span class="control-label">Active Layer</span>
                     <div class="layer-badge">
                         <button class="layer-option selected-base" id="layerBaseBtn" onclick="setShiftLayer(0)">CAPA 0 (BASE)</button>
                         <button class="layer-option" id="layerShiftBtn" onclick="setShiftLayer(1)">CAPA 1 (SHIFT)</button>
                     </div>
-                </div>
-
-                <div class="control-group">
-                    <span class="control-label">Dispositivo</span>
-                    <span style="font-size: 0.8rem; font-weight: 600; color: var(--accent-green);">LAUNCHPAD S / GRID 8x8</span>
                 </div>
             </div>
 
@@ -875,37 +1069,37 @@
             <!-- Footer con MIDI Learn y Presets -->
             <div class="matrix-footer">
                 <button class="btn-learn" id="btnLearnShift" style="width: auto; padding: 6px 16px;" onclick="toggleShiftLearn()">
-                    <span id="learnDot">●</span> <span id="learnShiftText">MIDI LEARN</span>
+                    <span id="learnDot" style="color: var(--led-amber);">●</span> <span id="learnShiftText">MIDI LEARN</span>
                 </button>
 
                 <div style="display: flex; gap: 8px;">
-                    <button class="nav-tab" style="background: var(--bg-card); border: 1px solid var(--border-subtle);" onclick="clearPadStates()">LIMPIAR</button>
-                    <button class="nav-tab" style="background: var(--bg-card); border: 1px solid var(--border-subtle);" onclick="alert('Importar perfil JSON de mapeo')">IMPORTAR</button>
-                    <button class="nav-tab" style="background: var(--bg-card); border: 1px solid var(--border-subtle);" onclick="alert('Exportar perfil JSON de mapeo')">EXPORTAR</button>
+                    <button class="nav-tab" style="border: 1px solid var(--border-hairline);" onclick="clearPadStates()">LIMPIAR</button>
+                    <button class="nav-tab" style="border: 1px solid var(--border-hairline);" onclick="alert('Importar perfil JSON de mapeo')">IMPORTAR</button>
+                    <button class="nav-tab" style="border: 1px solid var(--border-hairline);" onclick="alert('Exportar perfil JSON de mapeo')">EXPORTAR</button>
                 </div>
             </div>
         </div>
     </div>
 
     <!-- Workspace View: Live Monitor (Telemetría Conectada en Vivo) -->
-    <div class="view-content" id="view-live-monitor" style="flex: 1; display: none; flex-direction: column; padding: 16px; gap: 12px; overflow: hidden;">
-        <div style="display: flex; justify-content: space-between; align-items: center; background: var(--bg-panel); border: 1px solid var(--border-subtle); border-radius: 6px; padding: 10px 16px;">
-            <div style="display: flex; gap: 20px; align-items: center;">
+    <div class="view-content" id="view-live-monitor" style="flex: 1; display: none; flex-direction: column; padding: 16px; gap: 12px; overflow: hidden; background-color: var(--bg-canvas);">
+        <div style="display: flex; justify-content: space-between; align-items: center; background: var(--bg-surface); border: 1px solid var(--border-hairline); border-radius: 8px; padding: 12px 18px; box-shadow: var(--shadow-panel);">
+            <div style="display: flex; gap: 24px; align-items: center;">
                 <div>
-                    <span style="font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase;">Total Eventos:</span>
-                    <span style="font-family: var(--font-mono); font-weight: 700; color: var(--accent-cyan); margin-left: 6px;" id="live-total-count">0</span>
+                    <span style="font-family: var(--font-mono); font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.08em; font-weight: 600;">Total Eventos:</span>
+                    <span style="font-family: var(--font-mono); font-weight: 700; color: var(--accent-cyan); margin-left: 8px; font-size: 1.1rem;" id="live-total-count">0</span>
                 </div>
                 <div>
-                    <span style="font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase;">Notas Activas:</span>
-                    <span style="font-family: var(--font-mono); font-weight: 700; color: var(--accent-green); margin-left: 6px;" id="live-active-notes">0</span>
+                    <span style="font-family: var(--font-mono); font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.08em; font-weight: 600;">Notas Activas:</span>
+                    <span style="font-family: var(--font-mono); font-weight: 700; color: var(--led-green); margin-left: 8px; font-size: 1.1rem;" id="live-active-notes">0</span>
                 </div>
             </div>
             <div style="display: flex; gap: 8px;">
-                <button class="nav-tab" style="background: var(--bg-card); border: 1px solid var(--border-subtle);" id="btn-clear-telemetry" onclick="clearLiveTelemetry()">LIMPIAR LOG</button>
+                <button class="nav-tab" style="border: 1px solid var(--border-hairline);" id="btn-clear-telemetry" onclick="clearLiveTelemetry()">LIMPIAR LOG</button>
             </div>
         </div>
 
-        <div style="flex: 1; background: var(--bg-panel); border: 1px solid var(--border-subtle); border-radius: 6px; overflow-y: auto;">
+        <div style="flex: 1; background: var(--bg-surface); border: 1px solid var(--border-hairline); border-radius: 8px; overflow-y: auto; box-shadow: var(--shadow-panel);">
             <table class="matrix-table" style="width: 100%;">
                 <thead>
                     <tr>
@@ -935,6 +1129,33 @@
     </footer>
 
     <script>
+        // --- 1. GESTOR DE TEMA CLARO / OSCURO (CON PERSISTENCIA COMPARTIDA) ---
+        const themeToggleBtn = document.getElementById('btn-theme-toggle');
+        const themeLabel = document.getElementById('theme-label');
+        const themeIcon = document.getElementById('theme-icon');
+
+        function applyTheme(theme) {
+            document.documentElement.setAttribute('data-theme', theme);
+            localStorage.setItem('midicontrol_theme', theme);
+            if (theme === 'light') {
+                if (themeLabel) themeLabel.textContent = 'TEMA: CLARO';
+                if (themeIcon) themeIcon.textContent = '[☼]';
+            } else {
+                if (themeLabel) themeLabel.textContent = 'TEMA: OSCURO';
+                if (themeIcon) themeIcon.textContent = '[◐]';
+            }
+        }
+
+        const savedTheme = localStorage.getItem('midicontrol_theme') || 'dark';
+        applyTheme(savedTheme);
+
+        if (themeToggleBtn) {
+            themeToggleBtn.addEventListener('click', () => {
+                const currentTheme = document.documentElement.getAttribute('data-theme') || 'dark';
+                applyTheme(currentTheme === 'dark' ? 'light' : 'dark');
+            });
+        }
+
         let isLearning = false;
         let selectedRowId = 1;
 
@@ -1002,6 +1223,7 @@
         const liveTelemetryTbody = document.getElementById('live-telemetry-tbody');
         const activeDeviceName = document.getElementById('active-device-name');
         const connectionStatus = document.getElementById('connection-status');
+        const socketLed = document.getElementById('socket-led');
 
         function connectWebSocket() {
             const host = window.location.hostname || '127.0.0.1';
@@ -1013,7 +1235,10 @@
                 wsConnected = true;
                 if (connectionStatus) {
                     connectionStatus.textContent = '● ENLAZADO WS 8081';
-                    connectionStatus.style.color = 'var(--accent-green)';
+                    connectionStatus.style.color = 'var(--led-green)';
+                }
+                if (socketLed) {
+                    socketLed.style.backgroundColor = 'var(--led-green)';
                 }
                 ws.send(JSON.stringify({ type: 'get_devices' }));
             };
@@ -1022,7 +1247,10 @@
                 wsConnected = false;
                 if (connectionStatus) {
                     connectionStatus.textContent = '○ RECONECTANDO...';
-                    connectionStatus.style.color = 'var(--accent-yellow)';
+                    connectionStatus.style.color = 'var(--led-amber)';
+                }
+                if (socketLed) {
+                    socketLed.style.backgroundColor = 'var(--led-amber)';
                 }
                 setTimeout(connectWebSocket, 2000);
             };
@@ -1076,7 +1304,7 @@
 
             const tdDir = document.createElement('td');
             tdDir.style.fontWeight = '700';
-            tdDir.style.color = direction === 'in' ? 'var(--accent-cyan)' : 'var(--accent-green)';
+            tdDir.style.color = direction === 'in' ? 'var(--accent-cyan)' : 'var(--led-green)';
             tdDir.textContent = direction;
 
             const tdEvt = document.createElement('td');
@@ -1198,11 +1426,21 @@
                         pad.classList.add('is-shift-trigger');
                     }
 
-                    pad.innerHTML = `
-                        <div class="pad-note">${midiNumToNote(noteNum)}</div>
-                        <div class="pad-chnl">Ch 1</div>
-                        <div class="pad-role">${noteNum === shiftTriggerNote ? 'SHIFT' : 'PAD'}</div>
-                    `;
+                    const noteDiv = document.createElement('div');
+                    noteDiv.className = 'pad-note';
+                    noteDiv.textContent = midiNumToNote(noteNum);
+
+                    const chnlDiv = document.createElement('div');
+                    chnlDiv.className = 'pad-chnl';
+                    chnlDiv.textContent = 'Ch 1';
+
+                    const roleDiv = document.createElement('div');
+                    roleDiv.className = 'pad-role';
+                    roleDiv.textContent = noteNum === shiftTriggerNote ? 'SHIFT' : 'PAD';
+
+                    pad.appendChild(noteDiv);
+                    pad.appendChild(chnlDiv);
+                    pad.appendChild(roleDiv);
 
                     pad.addEventListener('click', () => {
                         if (isLearningShift) {
@@ -1255,14 +1493,16 @@
             const oldPad = document.getElementById(`pad-matrix-${shiftTriggerNote}`);
             if (oldPad) {
                 oldPad.classList.remove('is-shift-trigger');
-                oldPad.querySelector('.pad-role').textContent = 'PAD';
+                const role = oldPad.querySelector('.pad-role');
+                if (role) role.textContent = 'PAD';
             }
 
             shiftTriggerNote = note;
             const newPad = document.getElementById(`pad-matrix-${note}`);
             if (newPad) {
                 newPad.classList.add('is-shift-trigger');
-                newPad.querySelector('.pad-role').textContent = 'SHIFT';
+                const role = newPad.querySelector('.pad-role');
+                if (role) role.textContent = 'SHIFT';
             }
 
             document.getElementById('displayShiftTrigger').textContent = `${midiNumToNote(note)} (Ch 1)`;

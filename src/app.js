@@ -187,9 +187,17 @@ class LiveSentinelApp {
             // Protección contra Path Traversal: Sanitizar ruta y restringir a archivos públicos permitidos
             const safePath = path.normalize(req.url.split('?')[0]).replace(/^(\.\.[\/\\])+/, '');
             let fileName = safePath === '/' || safePath === '\\' ? 'midiosc_monitor.html' : safePath.replace(/^[\/\\]+/, '');
+            fileName = fileName.replace(/\\/g, '/');
             
             // Lista blanca de archivos públicos permitidos (con soporte retrocompatible para midi_monitor.html)
-            const allowedFiles = ['midiosc_monitor.html', 'midi_monitor.html', 'midi_shortcut_studio.html', 'favicon.ico'];
+            const allowedFiles = [
+                'midiosc_monitor.html',
+                'midi_monitor.html',
+                'midi_shortcut_studio.html',
+                'dist/index.html',
+                'dist/mockup_shift_matrix.html',
+                'favicon.ico'
+            ];
             if (!allowedFiles.includes(fileName)) {
                 res.writeHead(403, { 'Content-Type': 'text/plain' });
                 return res.end('Acceso denegado: solo archivos públicos autorizados.');

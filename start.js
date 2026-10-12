@@ -38,9 +38,10 @@ async function main() {
     console.log('   - Destino OSC por defecto: 127.0.0.1:57120 (SuperCollider)');
     console.log('   - Hot-Plug Watchdog:      ACTIVO (Reconexión automática USB en segundo plano)');
     console.log('\n[Comandos interactivos de consola]:');
+    console.log('   - [Alt + T / T]  Ver tabla TUI de mensajes MIDI');
+    console.log('   - [Alt + O / O]  Ver tabla TUI de datagramas OSC');
     console.log('   - [D / Alt + D]  Gestor de Dispositivos MIDI (SuperCollider Style: in/out por índice)');
     console.log('   - [Alt + P]      Pánico Global (All Notes Off multicanal)');
-    console.log('   - [Alt + T]      Ver tabla TUI del monitor en consola');
     console.log('   - [Alt + B]      Conmutar Modo Bypass / Zero-Overhead');
     console.log('   - [Ctrl + C]     Detener estación de forma segura\n');
 
@@ -52,7 +53,7 @@ async function main() {
         process.stdin.setRawMode(false);
         app.printDeviceInventory();
 
-        console.log('Comandos: in <índice|nombre|off> | out <índice|nombre|off> | ls | enter para volver');
+        console.log('Comandos: in <idx|nombre|off> | out <idx|nombre|off> | osc | midi | osc-target <ip> <puerto> | ls | enter para volver');
         const rl = readline.createInterface({
             input: process.stdin,
             output: process.stdout
@@ -85,6 +86,19 @@ async function main() {
                 try {
                     if (cmd === 'ls' || cmd === 'list') {
                         app.printDeviceInventory();
+                    } else if (cmd === 'osc') {
+                        app.terminalMonitor.renderOscTable();
+                    } else if (cmd === 'midi') {
+                        app.terminalMonitor.renderTable();
+                    } else if (cmd === 'osc-target') {
+                        const [targetHost, targetPortStr] = parts.slice(1);
+                        if (!targetHost || !targetPortStr) {
+                            console.log('Uso: osc-target <host> <puerto> (ej. osc-target 127.0.0.1 57120)');
+                        } else {
+                            const p = parseInt(targetPortStr, 10);
+                            app.processor.addOscTarget(targetHost, p);
+                            console.log(`>> [OSC TARGET] Añadido destino UDP OSC: ${targetHost}:${p}`);
+                        }
                     } else if (cmd === 'in') {
                         if (!arg) {
                             console.log('Uso: in <índice|nombre|off>');
@@ -108,7 +122,7 @@ async function main() {
                             }
                         }
                     } else {
-                        console.log(`Comando no reconocido "${cmd}". Usa: in <idx|off>, out <idx|off>, ls, o Enter para volver.`);
+                        console.log(`Comando no reconocido "${cmd}". Usa: in <idx|off>, out <idx|off>, osc, midi, osc-target, ls, o Enter para volver.`);
                     }
                 } catch (err) {
                     console.error(`[ERROR] ${err.message}`);
@@ -138,7 +152,9 @@ async function main() {
             // Alt+P: '\u001bp', '\u001bP', o 'π' / '∏' (según layout de macOS)
             const isAltP = key === '\u001bp' || key === '\u001bP' || key === 'π' || key === '∏';
             // Alt+T: '\u001bt', '\u001bT', o '†' / 'ˇ'
-            const isAltT = key === '\u001bt' || key === '\u001bT' || key === '†' || key === 'ˇ';
+            const isAltT = key === 't' || key === 'T' || key === '\u001bt' || key === '\u001bT' || key === '†' || key === 'ˇ';
+            // Alt+O: '\u001bo', '\u001bO', o 'ø' / 'Ø'
+            const isAltO = key === 'o' || key === 'O' || key === '\u001bo' || key === '\u001bO' || key === 'ø' || key === 'Ø';
             // Alt+B: '\u001bb', '\u001bB', o '∫' / 'ı'
             const isAltB = key === '\u001bb' || key === '\u001bB' || key === '∫' || key === 'ı';
             // D / Alt+D: 'd', 'D', '\u001bd', '\u001bD', o '∂'
@@ -151,6 +167,8 @@ async function main() {
                 app.panic();
             } else if (isAltT) {
                 app.terminalMonitor.renderTable();
+            } else if (isAltO) {
+                app.terminalMonitor.renderOscTable();
             } else if (isAltB) {
                 const newState = !app.isBypass;
                 app.setBypass(newState);
