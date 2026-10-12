@@ -899,10 +899,6 @@
                     <span style="font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase;">Notas Activas:</span>
                     <span style="font-family: var(--font-mono); font-weight: 700; color: var(--accent-green); margin-left: 6px;" id="live-active-notes">0</span>
                 </div>
-                <div>
-                    <span style="font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase;">Latencia Media:</span>
-                    <span style="font-family: var(--font-mono); font-weight: 700; color: var(--accent-yellow); margin-left: 6px;" id="live-latency">0.0 µs</span>
-                </div>
             </div>
             <div style="display: flex; gap: 8px;">
                 <button class="nav-tab" style="background: var(--bg-card); border: 1px solid var(--border-subtle);" id="btn-clear-telemetry" onclick="clearLiveTelemetry()">LIMPIAR LOG</button>
@@ -1000,11 +996,9 @@
         let wsConnected = false;
         let totalEventsCount = 0;
         let activeNotesCount = 0;
-        let latencyAcc = 0;
 
         const liveTotalCount = document.getElementById('live-total-count');
         const liveActiveNotes = document.getElementById('live-active-notes');
-        const liveLatency = document.getElementById('live-latency');
         const liveTelemetryTbody = document.getElementById('live-telemetry-tbody');
         const activeDeviceName = document.getElementById('active-device-name');
         const connectionStatus = document.getElementById('connection-status');
@@ -1063,11 +1057,6 @@
                 activeNotesCount--;
             }
             if (liveActiveNotes) liveActiveNotes.textContent = activeNotesCount;
-
-            if (data.durationUs) {
-                latencyAcc = (latencyAcc * 0.9) + (data.durationUs * 0.1);
-                if (liveLatency) liveLatency.textContent = `${latencyAcc.toFixed(1)} µs`;
-            }
 
             if (!liveTelemetryTbody) return;
 

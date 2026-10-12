@@ -267,7 +267,7 @@
         /* --- DASHBOARD TELEMETRY METERS --- */
         .telemetry-grid {
             display: grid;
-            grid-template-columns: repeat(4, 1fr);
+            grid-template-columns: repeat(3, 1fr);
             gap: 14px;
         }
 
@@ -956,14 +956,6 @@
 
         <div class="meter-card">
             <div class="meter-header">
-                <span class="meter-title">Latencia Media</span>
-            </div>
-            <div class="meter-value" id="val-latency">0.00<span class="meter-unit">µs</span></div>
-            <div class="meter-subtext">SLA Estricto: &lt; 3000 µs (3.0 ms)</div>
-        </div>
-
-        <div class="meter-card">
-            <div class="meter-header">
                 <span class="meter-title">Ruta Hardware</span>
             </div>
             <div class="meter-value" style="font-size: 1.35rem; line-height: 2.1rem; color: var(--accent-cyan);" id="val-target">USB2.0-MIDI</div>
@@ -1303,14 +1295,12 @@
         // --- 3. ESTADO Y VARIABLES DE TELEMETRÍA ---
         let totalCount = 0;
         let activeNotes = 0;
-        let latencyAccumulator = 0;
         let isPaused = false;
         let oscPacketCount = 0;
         const channelTimers = {};
 
         const valTotal = document.getElementById('val-total');
         const valActive = document.getElementById('val-active');
-        const valLatency = document.getElementById('val-latency');
         const valTarget = document.getElementById('val-target');
         const tbody = document.getElementById('events-tbody');
         const oscTbody = document.getElementById('osc-tbody');
@@ -1775,11 +1765,6 @@
 
             if (data.channel) {
                 triggerChannelLed(data.channel);
-            }
-
-            if (data.durationUs) {
-                latencyAccumulator = (latencyAccumulator * 0.9) + (data.durationUs * 0.1);
-                valLatency.innerHTML = `${latencyAccumulator.toFixed(1)}<span class="meter-unit">µs</span>`;
             }
 
             if (data.midiStatus && data.midiStatus.name) {

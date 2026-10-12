@@ -116,12 +116,23 @@ class MidiRouter {
             this.activeInputName = null;
         }
 
-        if (!target || target === 'none') {
+        if (target === undefined || target === null || target === '' || target === 'none' || target === 'off' || target === false) {
             return { status: 'disconnected', name: null };
         }
 
+        let resolvedTarget = target;
+        const inputs = this.listInputs();
+        if (typeof target === 'number' || (typeof target === 'string' && /^\d+$/.test(String(target).trim()))) {
+            const idx = parseInt(target, 10);
+            if (idx >= 0 && idx < inputs.length) {
+                resolvedTarget = inputs[idx].name;
+            } else {
+                throw new Error(`Índice MIDI IN fuera de rango: ${idx} (disponibles: 0 a ${Math.max(0, inputs.length - 1)})`);
+            }
+        }
+
         return new Promise((resolve, reject) => {
-            const port = this.midi.openMidiIn(target);
+            const port = this.midi.openMidiIn(resolvedTarget);
             port.and(() => {
                 this.activeInput = port;
                 this.activeInputName = port.name();
@@ -199,12 +210,23 @@ class MidiRouter {
             this.activeOutputName = null;
         }
 
-        if (!target || target === 'none') {
+        if (target === undefined || target === null || target === '' || target === 'none' || target === 'off' || target === false) {
             return { status: 'disconnected', name: null };
         }
 
+        let resolvedTarget = target;
+        const outputs = this.listOutputs();
+        if (typeof target === 'number' || (typeof target === 'string' && /^\d+$/.test(String(target).trim()))) {
+            const idx = parseInt(target, 10);
+            if (idx >= 0 && idx < outputs.length) {
+                resolvedTarget = outputs[idx].name;
+            } else {
+                throw new Error(`Índice MIDI OUT fuera de rango: ${idx} (disponibles: 0 a ${Math.max(0, outputs.length - 1)})`);
+            }
+        }
+
         return new Promise((resolve, reject) => {
-            const port = this.midi.openMidiOut(target);
+            const port = this.midi.openMidiOut(resolvedTarget);
             port.and(() => {
                 this.activeOutput = port;
                 this.activeOutputName = port.name();
@@ -215,9 +237,28 @@ class MidiRouter {
             });
 
             port.or(() => {
-                reject(new Error(`No se pudo abrir puerto MIDI OUT "${target}" (posiblemente ocupado por otra app)`));
+                reject(new Error(`No se pudo abrir puerto MIDI OUT "${resolvedTarget}" (posiblemente ocupado por otra app)`));
             });
         });
+    }
+
+    closeInput() {
+        if (this.activeInput) {
+            try { this.activeInput.close(); } catch (_) {}
+            this.activeInput = null;
+            this.activeInputName = null;
+        }
+        return { status: 'disconnected', name: null };
+    }
+
+    closeOutput() {
+        if (this.activeOutput) {
+            try { this.panic(); } catch (_) {}
+            try { this.activeOutput.close(); } catch (_) {}
+            this.activeOutput = null;
+            this.activeOutputName = null;
+        }
+        return { status: 'disconnected', name: null };
     }
 
     sendNoteOn(channel, note, velocity = 127) {

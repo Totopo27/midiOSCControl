@@ -98,15 +98,15 @@ class LiveSentinelApp {
 
         const outputs = this.processor.midiRouter.listOutputs();
         let portToOpen = targetMidi;
-        if (!portToOpen && targetMidi !== 'none') {
+        if ((portToOpen === undefined || portToOpen === null || portToOpen === '') && targetMidi !== 'none') {
             const usbPort = outputs.find(o => o.name.toLowerCase().includes('usb'));
             portToOpen = usbPort ? usbPort.name : null;
         }
 
-        if (portToOpen && portToOpen !== 'none') {
+        if (portToOpen !== undefined && portToOpen !== null && portToOpen !== '' && portToOpen !== 'none' && portToOpen !== 'off') {
             try {
-                await this.processor.midiRouter.openOutput(portToOpen);
-                this.targetMidiOut = portToOpen;
+                const resOut = await this.processor.midiRouter.openOutput(portToOpen);
+                this.targetMidiOut = resOut.name;
             } catch (err) {
                 console.warn(`[MIDI] No se pudo abrir salida por defecto "${portToOpen}": ${err.message}. Podrás seleccionarla manualmente desde la consola.`);
             }
@@ -116,22 +116,24 @@ class LiveSentinelApp {
 
         // Si se especifica targetMidiIn o en producción se auto-conecta si se pide
         let inToOpen = targetMidiIn;
-        if (!inToOpen && targetMidiIn !== 'none') {
+        if ((inToOpen === undefined || inToOpen === null || inToOpen === '') && targetMidiIn !== 'none') {
             const inputs = this.processor.midiRouter.listInputs();
             const usbIn = inputs.find(i => i.name.toLowerCase().includes('usb'));
             inToOpen = usbIn ? usbIn.name : null;
         }
 
-        if (inToOpen && inToOpen !== 'none') {
+        if (inToOpen !== undefined && inToOpen !== null && inToOpen !== '' && inToOpen !== 'none' && inToOpen !== 'off') {
             try {
-                await this.processor.midiRouter.openInput(inToOpen);
-                this.targetMidiIn = inToOpen;
+                const resIn = await this.processor.midiRouter.openInput(inToOpen);
+                this.targetMidiIn = resIn.name;
             } catch (err) {
                 console.warn(`[MIDI] No se pudo abrir entrada "${inToOpen}": ${err.message}.`);
             }
         } else {
             this.targetMidiIn = targetMidiIn === 'none' ? 'none' : null;
         }
+
+        this.printDeviceInventory();
 
         if (this.options.autoReconnect) {
             this._startWatchdog();
@@ -539,6 +541,72 @@ class LiveSentinelApp {
         for (const ws of this.webClients) {
             this.sendDeviceInventory(ws);
         }
+    }
+
+    getDeviceInventory() {
+        const outputs = this.processor.midiRouter.listOutputs();
+        const inputs = this.processor.midiRouter.listInputs();
+        return {
+            inputs,
+            outputs,
+            activeInput: this.processor.midiRouter.activeInputName,
+            activeOutput: this.processor.midiRouter.activeOutputName
+        };
+    }
+
+    printDeviceInventory() {
+        const inv = this.getDeviceInventory();
+        console.log('\n================================================================');
+        console.log('       INVENTARIO DE DISPOSITIVOS MIDI (SuperCollider Style)    ');
+        console.log('================================================================');
+        console.log('MIDI Sources (Inputs):');
+        if (inv.inputs.length === 0) {
+            console.log('  (Ningún puerto MIDI de entrada detectado)');
+        } else {
+            inv.inputs.forEach((inp, idx) => {
+                const isActive = inv.activeInput && inv.activeInput === inp.name;
+                const statusTag = isActive ? ' [ACTIVO *]' : ' [inactivo]';
+                console.log(`  [${idx}] ${inp.name}${statusTag}`);
+            });
+        }
+
+        console.log('\nMIDI Destinations (Outputs):');
+        if (inv.outputs.length === 0) {
+            console.log('  (Ningún puerto MIDI de salida detectado)');
+        } else {
+            inv.outputs.forEach((out, idx) => {
+                const isActive = inv.activeOutput && inv.activeOutput === out.name;
+                const statusTag = isActive ? ' [ACTIVO *]' : ' [inactivo]';
+                console.log(`  [${idx}] ${out.name}${statusTag}`);
+            });
+        }
+        console.log('================================================================\n');
+    }
+
+    async setMidiOutput(device) {
+        if (device === undefined || device === null || device === '' || device === 'none' || device === 'off') {
+            this.targetMidiOut = 'none';
+            this.processor.midiRouter.closeOutput();
+            this.broadcastDeviceInventory();
+            return { status: 'disconnected', name: null };
+        }
+        const res = await this.processor.midiRouter.openOutput(device);
+        this.targetMidiOut = res.name;
+        this.broadcastDeviceInventory();
+        return res;
+    }
+
+    async setMidiInput(device) {
+        if (device === undefined || device === null || device === '' || device === 'none' || device === 'off') {
+            this.targetMidiIn = 'none';
+            this.processor.midiRouter.closeInput();
+            this.broadcastDeviceInventory();
+            return { status: 'disconnected', name: null };
+        }
+        const res = await this.processor.midiRouter.openInput(device);
+        this.targetMidiIn = res.name;
+        this.broadcastDeviceInventory();
+        return res;
     }
 
     panic() {
