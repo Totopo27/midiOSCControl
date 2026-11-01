@@ -114,13 +114,8 @@ class LiveSentinelApp {
             this.targetMidiOut = targetMidi === 'none' ? 'none' : null;
         }
 
-        // Si se especifica targetMidiIn o en producción se auto-conecta si se pide
+        // Si se especifica targetMidiIn; si es 'none' o null se mantiene explícitamente desconectado
         let inToOpen = targetMidiIn;
-        if ((inToOpen === undefined || inToOpen === null || inToOpen === '') && targetMidiIn !== 'none') {
-            const inputs = this.processor.midiRouter.listInputs();
-            const usbIn = inputs.find(i => i.name.toLowerCase().includes('usb'));
-            inToOpen = usbIn ? usbIn.name : null;
-        }
 
         if (inToOpen !== undefined && inToOpen !== null && inToOpen !== '' && inToOpen !== 'none' && inToOpen !== 'off') {
             try {
@@ -376,11 +371,7 @@ class LiveSentinelApp {
                         try {
                             if (!msg.device || msg.device === 'none') {
                                 this.targetMidiIn = 'none';
-                                if (this.processor.midiRouter.activeInput) {
-                                    this.processor.midiRouter.activeInput.close();
-                                    this.processor.midiRouter.activeInput = null;
-                                    this.processor.midiRouter.activeInputName = null;
-                                }
+                                this.processor.midiRouter.closeInput();
                             } else {
                                 this.targetMidiIn = msg.device;
                                 await this.processor.midiRouter.openInput(msg.device);
@@ -511,12 +502,8 @@ class LiveSentinelApp {
                     }
                 } else if (this.targetMidiIn === 'none' && inActive) {
                     // Si el usuario eligió 'none', asegurar que la entrada quede cerrada
-                    if (this.processor.midiRouter.activeInput) {
-                        try { this.processor.midiRouter.activeInput.close(); } catch (_) {}
-                        this.processor.midiRouter.activeInput = null;
-                        this.processor.midiRouter.activeInputName = null;
-                        stateChanged = true;
-                    }
+                    this.processor.midiRouter.closeInput();
+                    stateChanged = true;
                 }
 
                 if (stateChanged) {
