@@ -9,8 +9,7 @@ class MidiRouter {
         this.midi = null;
         this.activeOutput = null;
         this.activeOutputName = null;
-        this.activeInput = null;
-        this.activeInputName = null;
+        this.activeInputs = new Map(); // key: deviceName -> JZZ port instance
         this.activeNotes = new Map(); // key: `${channel}_${note}` -> timestamp
         this.inputListeners = [];
 
@@ -26,6 +25,26 @@ class MidiRouter {
             daw_virtual_proxy: { allowIn: true, allowOut: true },
             osc:               { allowIn: true, allowOut: true }
         };
+    }
+
+    get activeInput() {
+        if (this.activeInputs.size === 0) return null;
+        return this.activeInputs.values().next().value;
+    }
+
+    get activeInputName() {
+        if (this.activeInputs.size === 0) return null;
+        if (this.activeInputs.size === 1) return this.activeInputs.keys().next().value;
+        return Array.from(this.activeInputs.keys()).join(', ');
+    }
+
+    getActiveInputNames() {
+        return Array.from(this.activeInputs.keys());
+    }
+
+    isInputActive(name) {
+        if (!name) return false;
+        return this.activeInputs.has(name);
     }
 
     setRoutePermission(target, direction, allowed) {
@@ -107,17 +126,11 @@ class MidiRouter {
         }
     }
 
-    async openInput(target) {
+    async openInput(target, options = { replace: true }) {
         if (!this.midi) await this.init();
 
-        if (this.activeInput) {
-            try { this.activeInput.close(); } catch (_) {}
-            this.activeInput = null;
-            this.activeInputName = null;
-        }
-
         if (target === undefined || target === null || target === '' || target === 'none' || target === 'off' || target === false) {
-            return { status: 'disconnected', name: null };
+            return this.closeInput();
         }
 
         let resolvedTarget = target;
@@ -131,11 +144,33 @@ class MidiRouter {
             }
         }
 
+        // Si ya está abierto exactamente este puerto
+        if (this.activeInputs.has(resolvedTarget)) {
+            if (options.replace && this.activeInputs.size > 1) {
+                for (const [name, p] of this.activeInputs.entries()) {
+                    if (name !== resolvedTarget) {
+                        try { p.close(); } catch (_) {}
+                        this.activeInputs.delete(name);
+                    }
+                }
+            }
+            return {
+                status: 'connected',
+                name: resolvedTarget,
+                activeInputs: this.getActiveInputNames()
+            };
+        }
+
+        // Si se solicita reemplazar (modo legacy de puerto único exclusivo)
+        if (options.replace) {
+            this.closeInput();
+        }
+
         return new Promise((resolve, reject) => {
             const port = this.midi.openMidiIn(resolvedTarget);
             port.and(() => {
-                this.activeInput = port;
-                this.activeInputName = port.name();
+                const portName = port.name();
+                this.activeInputs.set(portName, port);
 
                 port.connect((msg) => {
                     const statusByte = msg[0];
@@ -179,7 +214,7 @@ class MidiRouter {
                         velocity: data2,
                         hex: hexBytes,
                         rawBytes: Array.from(msg),
-                        source: this.activeInputName,
+                        source: portName,
                         timestamp: Date.now()
                     };
 
@@ -190,7 +225,8 @@ class MidiRouter {
 
                 resolve({
                     status: 'connected',
-                    name: this.activeInputName
+                    name: portName,
+                    activeInputs: this.getActiveInputNames()
                 });
             });
 
@@ -198,6 +234,88 @@ class MidiRouter {
                 reject(new Error(`No se pudo abrir puerto MIDI IN "${target}" (posiblemente ocupado por otra app)`));
             });
         });
+    }
+
+    async enableInput(target) {
+        return this.openInput(target, { replace: false });
+    }
+
+    disableInput(target) {
+        if (!target || target === 'all' || target === 'none') {
+            return this.closeInput();
+        }
+        let resolvedTarget = target;
+        const inputs = this.listInputs();
+        if (typeof target === 'number' || (typeof target === 'string' && /^\d+$/.test(String(target).trim()))) {
+            const idx = parseInt(target, 10);
+            if (idx >= 0 && idx < inputs.length) {
+                resolvedTarget = inputs[idx].name;
+            }
+        }
+        if (this.activeInputs.has(resolvedTarget)) {
+            const port = this.activeInputs.get(resolvedTarget);
+            try { port.close(); } catch (_) {}
+            this.activeInputs.delete(resolvedTarget);
+        }
+        return {
+            status: this.activeInputs.size > 0 ? 'connected' : 'disconnected',
+            name: this.activeInputName,
+            activeInputs: this.getActiveInputNames()
+        };
+    }
+
+    closeInput(target = null) {
+        if (target && target !== 'all' && target !== 'none') {
+            return this.disableInput(target);
+        }
+        for (const [name, port] of this.activeInputs.entries()) {
+            try { port.close(); } catch (_) {}
+        }
+        this.activeInputs.clear();
+        return { status: 'disconnected', name: null, activeInputs: [] };
+    }
+
+    async setActiveInputs(targets) {
+        if (!this.midi) await this.init();
+        if (!Array.isArray(targets) || targets.length === 0) {
+            return this.closeInput();
+        }
+
+        const targetSet = new Set();
+        const available = this.listInputs();
+        for (const t of targets) {
+            if (typeof t === 'number' || (typeof t === 'string' && /^\d+$/.test(String(t).trim()))) {
+                const idx = parseInt(t, 10);
+                if (idx >= 0 && idx < available.length) targetSet.add(available[idx].name);
+            } else if (typeof t === 'string' && t !== 'none' && t !== '') {
+                targetSet.add(t);
+            }
+        }
+
+        // Cerrar los que no están en targetSet
+        for (const [name, port] of this.activeInputs.entries()) {
+            if (!targetSet.has(name)) {
+                try { port.close(); } catch (_) {}
+                this.activeInputs.delete(name);
+            }
+        }
+
+        // Habilitar los que faltan
+        for (const name of targetSet) {
+            if (!this.activeInputs.has(name)) {
+                try {
+                    await this.enableInput(name);
+                } catch (e) {
+                    console.warn(`[ROUTER] Error al habilitar entrada "${name}": ${e.message}`);
+                }
+            }
+        }
+
+        return {
+            status: this.activeInputs.size > 0 ? 'connected' : 'disconnected',
+            name: this.activeInputName,
+            activeInputs: this.getActiveInputNames()
+        };
     }
 
     async openOutput(target) {
@@ -240,15 +358,6 @@ class MidiRouter {
                 reject(new Error(`No se pudo abrir puerto MIDI OUT "${resolvedTarget}" (posiblemente ocupado por otra app)`));
             });
         });
-    }
-
-    closeInput() {
-        if (this.activeInput) {
-            try { this.activeInput.close(); } catch (_) {}
-            this.activeInput = null;
-            this.activeInputName = null;
-        }
-        return { status: 'disconnected', name: null };
     }
 
     closeOutput() {

@@ -16,7 +16,11 @@ async function testNetworkAudit() {
     console.log('   TEST AUDITORÍA FASE 1: RED, WEBSOCKET Y SEGURIDAD OSC        ');
     console.log('================================================================\n');
 
-    const app = new LiveSentinelApp();
+    const app = new LiveSentinelApp({
+        httpPort: 3099,
+        wsPort: 8099,
+        localOnly: true
+    });
     const info = await app.start();
 
     // --- PRUEBA 1: Protección contra Path Traversal y Allowlist HTTP ---

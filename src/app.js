@@ -32,6 +32,8 @@ class LiveSentinelApp {
             host: options.host || (options.localOnly ? '127.0.0.1' : '0.0.0.0'),
             autoReconnect: options.autoReconnect !== false,
             pollIntervalMs: options.pollIntervalMs || 2500,
+            httpPort: options.httpPort || parseInt(process.env.HTTP_PORT, 10) || HTTP_PORT,
+            wsPort: options.wsPort || parseInt(process.env.WS_PORT, 10) || WS_PORT,
             ...options
         };
         this.processor = new StreamProcessor();
@@ -44,7 +46,19 @@ class LiveSentinelApp {
         this.isBypass = false; // Modo Rendimiento / Zero-Overhead (desacopla telemetría de UI)
         this.watchdogTimer = null;
         this.targetMidiIn = null;
+        this.targetMidiIns = new Set();
         this.targetMidiOut = null;
+    }
+
+    _syncTargetMidiIn() {
+        const active = this.processor.midiRouter.getActiveInputNames();
+        if (active.length === 0) {
+            this.targetMidiIn = 'none';
+        } else if (active.length === 1) {
+            this.targetMidiIn = active[0];
+        } else {
+            this.targetMidiIn = active.join(', ');
+        }
     }
 
     setBypass(enable) {
@@ -115,17 +129,25 @@ class LiveSentinelApp {
         }
 
         // Si se especifica targetMidiIn; si es 'none' o null se mantiene explícitamente desconectado
-        let inToOpen = targetMidiIn;
-
-        if (inToOpen !== undefined && inToOpen !== null && inToOpen !== '' && inToOpen !== 'none' && inToOpen !== 'off') {
+        if (Array.isArray(targetMidiIn)) {
             try {
-                const resIn = await this.processor.midiRouter.openInput(inToOpen);
-                this.targetMidiIn = resIn.name;
+                await this.processor.midiRouter.setActiveInputs(targetMidiIn);
+                this.targetMidiIns = new Set(this.processor.midiRouter.getActiveInputNames());
+                this._syncTargetMidiIn();
             } catch (err) {
-                console.warn(`[MIDI] No se pudo abrir entrada "${inToOpen}": ${err.message}.`);
+                console.warn(`[MIDI] Error al abrir entradas: ${err.message}`);
+            }
+        } else if (targetMidiIn !== undefined && targetMidiIn !== null && targetMidiIn !== '' && targetMidiIn !== 'none' && targetMidiIn !== 'off') {
+            try {
+                const resIn = await this.processor.midiRouter.openInput(targetMidiIn);
+                this.targetMidiIn = resIn.name;
+                this.targetMidiIns = new Set(this.processor.midiRouter.getActiveInputNames());
+            } catch (err) {
+                console.warn(`[MIDI] No se pudo abrir entrada "${targetMidiIn}": ${err.message}.`);
             }
         } else {
             this.targetMidiIn = targetMidiIn === 'none' ? 'none' : null;
+            this.targetMidiIns.clear();
         }
 
         this.printDeviceInventory();
@@ -168,6 +190,7 @@ class LiveSentinelApp {
                         inputs,
                         activeOutput: this.processor.midiRouter.activeOutputName,
                         activeInput: this.processor.midiRouter.activeInputName,
+                        activeInputs: this.processor.midiRouter.getActiveInputNames(),
                         virtualProxy: this.processor.virtualProxy ? this.processor.virtualProxy.getStatus() : null
                     });
                     res.writeHead(200, {
@@ -227,8 +250,18 @@ class LiveSentinelApp {
             });
         });
 
+        const HTTP_PORT = this.options.httpPort;
+        const WS_PORT = this.options.wsPort;
         const bindHost = this.options.host;
         const displayHost = (bindHost === '0.0.0.0') ? LOCAL_IP : bindHost;
+
+        this.httpServer.on('error', (err) => {
+            if (err.code === 'EADDRINUSE') {
+                console.warn(`[HTTP] Puerto ${HTTP_PORT} en uso, continuando con WebSocket.`);
+            } else {
+                console.error(`[HTTP] Error en servidor HTTP:`, err);
+            }
+        });
 
         this.httpServer.listen(HTTP_PORT, bindHost, () => {
             console.log(`[HTTP] Monitor Web disponible: http://${displayHost}:${HTTP_PORT}`);
@@ -371,11 +404,45 @@ class LiveSentinelApp {
                         try {
                             if (!msg.device || msg.device === 'none') {
                                 this.targetMidiIn = 'none';
+                                this.targetMidiIns.clear();
                                 this.processor.midiRouter.closeInput();
                             } else {
                                 this.targetMidiIn = msg.device;
+                                this.targetMidiIns = new Set([msg.device]);
                                 await this.processor.midiRouter.openInput(msg.device);
                             }
+                            this.broadcastDeviceInventory();
+                        } catch (e) {
+                            ws.send(JSON.stringify({ type: 'error', message: e.message }));
+                        }
+                        return;
+                    }
+
+                    if (msg.type === 'toggle_midi_input') {
+                        try {
+                            const dev = msg.device;
+                            const shouldEnable = !!msg.enabled;
+                            if (shouldEnable) {
+                                await this.processor.midiRouter.enableInput(dev);
+                                this.targetMidiIns.add(dev);
+                            } else {
+                                this.processor.midiRouter.disableInput(dev);
+                                this.targetMidiIns.delete(dev);
+                            }
+                            this._syncTargetMidiIn();
+                            this.broadcastDeviceInventory();
+                        } catch (e) {
+                            ws.send(JSON.stringify({ type: 'error', message: e.message }));
+                        }
+                        return;
+                    }
+
+                    if (msg.type === 'set_midi_inputs') {
+                        try {
+                            const devs = Array.isArray(msg.devices) ? msg.devices : [];
+                            await this.processor.midiRouter.setActiveInputs(devs);
+                            this.targetMidiIns = new Set(this.processor.midiRouter.getActiveInputNames());
+                            this._syncTargetMidiIn();
                             this.broadcastDeviceInventory();
                         } catch (e) {
                             ws.send(JSON.stringify({ type: 'error', message: e.message }));
@@ -485,7 +552,26 @@ class LiveSentinelApp {
 
                 // 2. Verificar entrada física: solo reconectar si el usuario tiene un puerto asignado explícito
                 // y NO ha elegido desconectar ('none')
-                if (this.targetMidiIn && this.targetMidiIn !== 'none') {
+                if (this.targetMidiIn === 'none') {
+                    if (this.processor.midiRouter.getActiveInputNames().length > 0) {
+                        this.processor.midiRouter.closeInput();
+                        stateChanged = true;
+                    }
+                } else if (this.targetMidiIns.size > 0) {
+                    const activeNames = this.processor.midiRouter.getActiveInputNames();
+                    for (const targetName of this.targetMidiIns) {
+                        if (!activeNames.includes(targetName)) {
+                            const exists = inputs.some(i => i.name === targetName);
+                            if (exists) {
+                                try {
+                                    await this.processor.midiRouter.enableInput(targetName);
+                                    console.log(`[WATCHDOG::HW] Entrada MIDI reconectada: "${targetName}"`);
+                                    stateChanged = true;
+                                } catch (_) {}
+                            }
+                        }
+                    }
+                } else if (this.targetMidiIn && this.targetMidiIn !== 'none') {
                     const inExists = inActive && inputs.some(i => i.name === inActive);
                     if (!inExists) {
                         let inToOpen = this.targetMidiIn;
@@ -500,10 +586,6 @@ class LiveSentinelApp {
                             } catch (_) {}
                         }
                     }
-                } else if (this.targetMidiIn === 'none' && inActive) {
-                    // Si el usuario eligió 'none', asegurar que la entrada quede cerrada
-                    this.processor.midiRouter.closeInput();
-                    stateChanged = true;
                 }
 
                 if (stateChanged) {
@@ -520,12 +602,14 @@ class LiveSentinelApp {
         try {
             const outputs = this.processor.midiRouter.listOutputs();
             const inputs = this.processor.midiRouter.listInputs();
+            const activeInputs = this.processor.midiRouter.getActiveInputNames();
             const payload = JSON.stringify({
                 type: 'device_inventory',
                 outputs,
                 inputs,
                 activeOutput: this.processor.midiRouter.activeOutputName,
                 activeInput: this.processor.midiRouter.activeInputName,
+                activeInputs,
                 virtualProxy: this.processor.virtualProxy ? this.processor.virtualProxy.getStatus() : null
             });
             ws.send(payload);
@@ -541,10 +625,12 @@ class LiveSentinelApp {
     getDeviceInventory() {
         const outputs = this.processor.midiRouter.listOutputs();
         const inputs = this.processor.midiRouter.listInputs();
+        const activeInputs = this.processor.midiRouter.getActiveInputNames();
         return {
             inputs,
             outputs,
             activeInput: this.processor.midiRouter.activeInputName,
+            activeInputs,
             activeOutput: this.processor.midiRouter.activeOutputName
         };
     }
@@ -559,7 +645,7 @@ class LiveSentinelApp {
             console.log('  (Ningún puerto MIDI de entrada detectado)');
         } else {
             inv.inputs.forEach((inp, idx) => {
-                const isActive = inv.activeInput && inv.activeInput === inp.name;
+                const isActive = inv.activeInputs && inv.activeInputs.includes(inp.name);
                 const statusTag = isActive ? ' [ACTIVO *]' : ' [inactivo]';
                 console.log(`  [${idx}] ${inp.name}${statusTag}`);
             });

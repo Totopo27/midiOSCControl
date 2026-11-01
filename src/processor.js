@@ -97,6 +97,7 @@ class StreamProcessor {
             hex: msg.hex,
             durationUs: 0.1,
             timestamp: msg.timestamp,
+            source: msg.source,
             midiStatus: { name: msg.source },
             layer: this.shiftEngine.activeLayer
         };

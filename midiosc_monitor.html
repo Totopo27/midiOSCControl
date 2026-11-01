@@ -233,6 +233,88 @@
             border-color: var(--accent-cyan);
         }
 
+        .midi-inputs-panel {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            flex: 1.2;
+            min-width: 280px;
+        }
+
+        .midi-inputs-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+        }
+
+        .midi-inputs-switches {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            align-items: center;
+        }
+
+        .midi-in-toggle {
+            background: var(--bg-panel);
+            border: 1px solid var(--border-hairline);
+            color: var(--text-muted);
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.75rem;
+            font-weight: 600;
+            cursor: pointer;
+            letter-spacing: 0.04em;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            transition: all 0.15s ease-in-out;
+            user-select: none;
+        }
+
+        .midi-in-toggle:hover {
+            border-color: var(--border-hover);
+            color: var(--text-secondary);
+        }
+
+        .midi-in-toggle.active {
+            background: rgba(6, 182, 212, 0.14);
+            border-color: var(--accent-cyan);
+            color: var(--accent-cyan);
+            box-shadow: 0 0 10px var(--accent-cyan-glow);
+        }
+
+        .midi-in-toggle .toggle-led {
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: var(--text-muted);
+            transition: all 0.15s ease-in-out;
+            display: inline-block;
+        }
+
+        .midi-in-toggle.active .toggle-led {
+            background: var(--accent-cyan);
+            box-shadow: 0 0 6px var(--accent-cyan);
+        }
+
+        .midi-in-toggle.toggle-none {
+            border-style: dashed;
+        }
+
+        .midi-in-toggle.toggle-none.active {
+            background: rgba(239, 68, 68, 0.12);
+            border-color: #ef4444;
+            color: #ef4444;
+            box-shadow: 0 0 10px rgba(239, 68, 68, 0.25);
+        }
+
+        .midi-in-toggle.toggle-none.active .toggle-led {
+            background: #ef4444;
+            box-shadow: 0 0 6px #ef4444;
+        }
+
         .mode-toggle-group {
             display: flex;
             gap: 6px;
@@ -909,9 +991,15 @@
 
     <!-- DEVICE & ROUTING DECK -->
     <section class="routing-deck">
-        <div class="select-group">
-            <label class="select-label" for="select-midi-in">DISPOSITIVO DE ENTRADA (MIDI IN):</label>
-            <select class="select-custom" id="select-midi-in">
+        <div class="midi-inputs-panel">
+            <div class="midi-inputs-header">
+                <label class="select-label" for="select-midi-in">ENTRADAS MIDI (MIDI IN) — MULTI-DISPOSITIVO:</label>
+                <span id="inputs-status-tag" class="select-label" style="color: var(--accent-cyan); font-weight: 700;">0 ACTIVAS</span>
+            </div>
+            <div class="midi-inputs-switches" id="midi-in-switches">
+                <!-- Generado dinámicamente con DOM seguro -->
+            </div>
+            <select class="select-custom" id="select-midi-in" style="display: none;">
                 <option value="none">-- Sin entrada seleccionada --</option>
             </select>
         </div>
@@ -1444,6 +1532,8 @@
         // Selectores de Dispositivos y Modos
         const selectMidiIn = document.getElementById('select-midi-in');
         const selectMidiOut = document.getElementById('select-midi-out');
+        const midiInSwitches = document.getElementById('midi-in-switches');
+        const inputsStatusTag = document.getElementById('inputs-status-tag');
         const btnRefreshDevices = document.getElementById('btn-refresh-devices');
         const toggleMidi = document.getElementById('toggle-midi');
         const toggleOsc = document.getElementById('toggle-osc');
@@ -1514,16 +1604,99 @@
         function updateDeviceDropdowns(inventory) {
             if (!inventory) return;
             const currentIn = inventory.activeInput || 'none';
+            const activeInputs = Array.isArray(inventory.activeInputs)
+                ? inventory.activeInputs
+                : (currentIn !== 'none' ? [currentIn] : []);
+
+            // Actualizar select oculto para compatibilidad
             selectMidiIn.innerHTML = '<option value="none">-- Sin entrada (Desconectado) --</option>';
             if (Array.isArray(inventory.inputs)) {
                 inventory.inputs.forEach(inp => {
                     const opt = document.createElement('option');
                     opt.value = inp.name;
                     opt.textContent = `${inp.name} (${inp.manufacturer || 'General'})`;
-                    if (inp.name === currentIn) opt.selected = true;
+                    if (activeInputs.includes(inp.name)) opt.selected = true;
                     selectMidiIn.appendChild(opt);
                     knownDevicesSet.add(inp.name);
                 });
+            }
+
+            // Actualizar lista de switches multi-dispositivo con DOM API seguro
+            if (midiInSwitches) {
+                while (midiInSwitches.firstChild) {
+                    midiInSwitches.removeChild(midiInSwitches.firstChild);
+                }
+
+                // Botón NINGUNA (Desconectar todas)
+                const noneBtn = document.createElement('button');
+                noneBtn.type = 'button';
+                noneBtn.className = 'midi-in-toggle toggle-none' + (activeInputs.length === 0 ? ' active' : '');
+                noneBtn.title = 'Desconectar todas las entradas MIDI activas';
+
+                const noneLed = document.createElement('span');
+                noneLed.className = 'toggle-led';
+                noneBtn.appendChild(noneLed);
+
+                const noneText = document.createTextNode('NINGUNA (OFF)');
+                noneBtn.appendChild(noneText);
+
+                noneBtn.onclick = () => {
+                    if (ws && ws.readyState === WebSocket.OPEN) {
+                        ws.send(JSON.stringify({ type: 'set_midi_input', device: 'none' }));
+                    }
+                };
+                midiInSwitches.appendChild(noneBtn);
+
+                // Switch individual por cada puerto de entrada disponible
+                if (Array.isArray(inventory.inputs) && inventory.inputs.length > 0) {
+                    inventory.inputs.forEach(inp => {
+                        const isActive = activeInputs.includes(inp.name);
+                        const btn = document.createElement('button');
+                        btn.type = 'button';
+                        btn.className = 'midi-in-toggle' + (isActive ? ' active' : '');
+                        btn.title = `Alternar entrada: ${inp.name} (${inp.manufacturer || 'General'})`;
+
+                        const led = document.createElement('span');
+                        led.className = 'toggle-led';
+                        btn.appendChild(led);
+
+                        const labelSpan = document.createElement('span');
+                        labelSpan.textContent = inp.name;
+                        btn.appendChild(labelSpan);
+
+                        btn.onclick = () => {
+                            if (ws && ws.readyState === WebSocket.OPEN) {
+                                ws.send(JSON.stringify({
+                                    type: 'toggle_midi_input',
+                                    device: inp.name,
+                                    enabled: !isActive
+                                }));
+                            }
+                        };
+
+                        midiInSwitches.appendChild(btn);
+                        knownDevicesSet.add(inp.name);
+                    });
+                } else {
+                    const emptyMsg = document.createElement('span');
+                    emptyMsg.style.fontSize = '0.75rem';
+                    emptyMsg.style.color = 'var(--text-muted)';
+                    emptyMsg.textContent = '(Sin puertos IN detectados)';
+                    midiInSwitches.appendChild(emptyMsg);
+                }
+            }
+
+            if (inputsStatusTag) {
+                if (activeInputs.length === 0) {
+                    inputsStatusTag.textContent = '0 ACTIVAS (OFF)';
+                    inputsStatusTag.style.color = 'var(--text-muted)';
+                } else if (activeInputs.length === 1) {
+                    inputsStatusTag.textContent = '1 ACTIVA';
+                    inputsStatusTag.style.color = 'var(--accent-cyan)';
+                } else {
+                    inputsStatusTag.textContent = `${activeInputs.length} ACTIVAS SIMULTÁNEAS`;
+                    inputsStatusTag.style.color = 'var(--led-green)';
+                }
             }
 
             const currentOut = inventory.activeOutput || 'none';

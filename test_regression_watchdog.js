@@ -19,13 +19,15 @@ async function testWatchdogGhostReconnectionPrevention() {
     const app = new LiveSentinelApp({
         host: '127.0.0.1',
         localOnly: true,
+        httpPort: 3098,
+        wsPort: 8098,
         autoReconnect: true,
         pollIntervalMs: 250 // Encuesta rápida para forzar estrés de watchdog
     });
 
     await app.start(null, 57120, 'none');
 
-    const ws = new WebSocket('ws://127.0.0.1:8081');
+    const ws = new WebSocket('ws://127.0.0.1:8098');
     await new Promise((resolve) => ws.on('open', resolve));
 
     // [TEST 1] Desconectar salida explícitamente a 'none'
